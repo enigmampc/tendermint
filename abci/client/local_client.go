@@ -62,6 +62,7 @@ func (app *localClient) EchoAsync(msg string) *ReqRes {
 
 func (app *localClient) InfoAsync(req types.RequestInfo) *ReqRes {
 	fmt.Println("Catching RLock from InfoAsync")
+	println("Catching RLock from InfoAsync")
 	app.mtx.RLock()
 	defer app.mtx.RUnlock()
 
@@ -107,6 +108,7 @@ func (app *localClient) CheckTxAsync(req types.RequestCheckTx) *ReqRes {
 
 func (app *localClient) QueryAsync(req types.RequestQuery) *ReqRes {
 	fmt.Println("Catching RLock from QueryAsync")
+	println("Catching RLock from QueryAsync")
 	app.mtx.RLock()
 	defer app.mtx.RUnlock()
 
@@ -173,6 +175,7 @@ func (app *localClient) EchoSync(msg string) (*types.ResponseEcho, error) {
 
 func (app *localClient) InfoSync(req types.RequestInfo) (*types.ResponseInfo, error) {
 	fmt.Println("Catching RLock from InfoSync")
+	println("Catching RLock from InfoSync")
 	app.mtx.RLock()
 	defer app.mtx.RUnlock()
 
@@ -206,6 +209,7 @@ func (app *localClient) CheckTxSync(req types.RequestCheckTx) (*types.ResponseCh
 
 func (app *localClient) QuerySync(req types.RequestQuery) (*types.ResponseQuery, error) {
 	fmt.Println("Catching RLock from QuerySync")
+	println("Catching RLock from QuerySync")
 	app.mtx.RLock()
 	defer app.mtx.RUnlock()
 
