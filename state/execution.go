@@ -229,6 +229,12 @@ func (blockExec *BlockExecutor) Commit(
 		"txs", len(block.Txs),
 		"appHash", fmt.Sprintf("%X", res.Data),
 	)
+	blockExec.logger.Info(
+		"Committed state - test",
+		"height", block.Height,
+		"txs", len(block.Txs),
+		"appHash", fmt.Sprintf("%X", res.Data),
+	)
 
 	// Update mempool.
 	err = blockExec.mempool.Update(
