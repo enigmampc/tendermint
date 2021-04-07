@@ -29,7 +29,7 @@ type SocketServer struct {
 	conns      map[int]net.Conn
 	nextConnID int
 
-	appMtx sync.Mutex
+	appMtx sync.RWMutex
 	app    types.Application
 }
 
@@ -156,22 +156,6 @@ func (s *SocketServer) handleRequests(closeConn chan error, conn io.Reader, resp
 	var count int
 	var bufReader = bufio.NewReader(conn)
 
-	defer func() {
-		// make sure to recover from any app-related panics to allow proper socket cleanup
-		r := recover()
-		if r != nil {
-			const size = 64 << 10
-			buf := make([]byte, size)
-			buf = buf[:runtime.Stack(buf, false)]
-			err := fmt.Errorf("recovered from panic: %v\n%s", r, buf)
-			if !s.isLoggerSet {
-				fmt.Fprintln(os.Stderr, err)
-			}
-			closeConn <- err
-			s.appMtx.Unlock()
-		}
-	}()
-
 	for {
 
 		var req = &types.Request{}
@@ -184,11 +168,64 @@ func (s *SocketServer) handleRequests(closeConn chan error, conn io.Reader, resp
 			}
 			return
 		}
-		s.appMtx.Lock()
-		count++
-		s.handleRequest(req, responses)
-		s.appMtx.Unlock()
+
+		if req.GetQuery() != nil {
+			fmt.Println("Catching RLock from handleQuery")
+			println("Catching RLock from handleQuery")
+			s.handleQuery(closeConn, responses, &count, req)
+		} else {
+			fmt.Println("Catching RLock from handleNonQuery")
+			println("Catching RLock from handleNonQuery")
+			s.handleNonQuery(closeConn, responses, &count, req)
+		}
 	}
+}
+
+func (s *SocketServer) recoverRequestFailure(closeConn chan error, r interface{}) {
+	const size = 64 << 10
+	buf := make([]byte, size)
+	buf = buf[:runtime.Stack(buf, false)]
+	err := fmt.Errorf("recovered from panic: %v\n%s", r, buf)
+	if !s.isLoggerSet {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	closeConn <- err
+}
+
+// TODO why do we need the `count`? is it to trigger some compiler magic, or just code leftovers?
+// `req` MUST contain a `types.Request_Query`
+func (s *SocketServer) handleQuery(closeConn chan error, responses chan<- *types.Response, count *int, req *types.Request) {
+	defer func() {
+		// make sure to recover from any app-related panics to allow proper socket cleanup
+		r := recover()
+		if r != nil {
+			s.recoverRequestFailure(closeConn, r)
+			s.appMtx.RUnlock()
+		}
+	}()
+
+	s.appMtx.RLock()
+	*count++
+	s.handleRequest(req, responses)
+	s.appMtx.RUnlock()
+}
+
+// TODO why do we need the `count`? is it to trigger some compiler magic, or just code leftovers?
+// `req` MUST NOT contain a `types.Request_Query`
+func (s *SocketServer) handleNonQuery(closeConn chan error, responses chan<- *types.Response, count *int, req *types.Request) {
+	defer func() {
+		// make sure to recover from any app-related panics to allow proper socket cleanup
+		r := recover()
+		if r != nil {
+			s.recoverRequestFailure(closeConn, r)
+			s.appMtx.Unlock()
+		}
+	}()
+
+	s.appMtx.Lock()
+	*count++
+	s.handleRequest(req, responses)
+	s.appMtx.Unlock()
 }
 
 func (s *SocketServer) handleRequest(req *types.Request, responses chan<- *types.Response) {

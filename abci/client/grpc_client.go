@@ -25,7 +25,7 @@ type grpcClient struct {
 	client types.ABCIApplicationClient
 	conn   *grpc.ClientConn
 
-	mtx   sync.Mutex
+	mtx   sync.RWMutex
 	addr  string
 	err   error
 	resCb func(*types.Request, *types.Response) // listens to all callbacks
@@ -103,8 +103,10 @@ func (cli *grpcClient) StopForError(err error) {
 }
 
 func (cli *grpcClient) Error() error {
-	cli.mtx.Lock()
-	defer cli.mtx.Unlock()
+	fmt.Println("Catching RLock from grpc Error")
+	println("Catching RLock from grpc Error")
+	cli.mtx.RLock()
+	defer cli.mtx.RUnlock()
 	return cli.err
 }
 
@@ -112,8 +114,8 @@ func (cli *grpcClient) Error() error {
 // NOTE: callback may get internally generated flush responses.
 func (cli *grpcClient) SetResponseCallback(resCb Callback) {
 	cli.mtx.Lock()
+	defer cli.mtx.Unlock()
 	cli.resCb = resCb
-	cli.mtx.Unlock()
 }
 
 //----------------------------------------

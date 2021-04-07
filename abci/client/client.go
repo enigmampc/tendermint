@@ -76,7 +76,7 @@ type ReqRes struct {
 	*sync.WaitGroup
 	*types.Response // Not set atomically, so be sure to use WaitGroup.
 
-	mtx  sync.Mutex
+	mtx  sync.RWMutex
 	done bool                  // Gets set to true once *after* WaitGroup.Done().
 	cb   func(*types.Response) // A single callback that may be set.
 }
@@ -110,16 +110,18 @@ func (reqRes *ReqRes) SetCallback(cb func(res *types.Response)) {
 }
 
 func (reqRes *ReqRes) GetCallback() func(*types.Response) {
-	reqRes.mtx.Lock()
-	defer reqRes.mtx.Unlock()
+	reqRes.mtx.RLock()
+	defer reqRes.mtx.RUnlock()
 	return reqRes.cb
 }
 
 // NOTE: it should be safe to read reqRes.cb without locks after this.
 func (reqRes *ReqRes) SetDone() {
+	fmt.Println("Catching RLock from SetDone")
+	println("Catching RLock from SetDone")
 	reqRes.mtx.Lock()
+	defer reqRes.mtx.Unlock()
 	reqRes.done = true
-	reqRes.mtx.Unlock()
 }
 
 func waitGroup1() (wg *sync.WaitGroup) {
