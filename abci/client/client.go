@@ -81,7 +81,7 @@ type ReqRes struct {
 	*sync.WaitGroup
 	*types.Response // Not set atomically, so be sure to use WaitGroup.
 
-	mtx tmsync.Mutex
+	mtx tmsync.RWMutex
 
 	// callbackInvoked as a variable to track if the callback was already
 	// invoked during the regular execution of the request. This variable
@@ -138,8 +138,8 @@ func (r *ReqRes) InvokeCallback() {
 //
 // ref: https://github.com/tendermint/tendermint/issues/5439
 func (r *ReqRes) GetCallback() func(*types.Response) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
 	return r.cb
 }
 
