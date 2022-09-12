@@ -636,7 +636,7 @@ func (sw *Switch) acceptRoutine() {
 					sw.addrBook.AddOurAddress(&addr)
 				}
 
-				sw.Logger.Info(
+				sw.Logger.Debug(
 					"Inbound Peer rejected",
 					"err", err,
 					"numPeers", sw.peers.Size(),
