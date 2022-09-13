@@ -304,12 +304,36 @@ func execBlockOnProxyApp(
 		return nil, errors.New("nil header")
 	}
 
+	commit := block.LastCommit.ToProto()
+	if commit == nil {
+		return nil, errors.New("nil commit")
+	}
+
+	state, err := store.Load()
+	if err != nil {
+		return nil, errors.New("nil LoadValidators")
+	}
+
+	valsetProto, err := state.Validators.ToProto()
+	if err != nil {
+		return nil, errors.New("nil validator set")
+	}
+
+	nextValsetProto, err := state.NextValidators.ToProto()
+	if err != nil {
+		return nil, errors.New("nil next validator set")
+	}
+
 	abciResponses.BeginBlock, err = proxyAppConn.BeginBlockSync(abci.RequestBeginBlock{
 		Hash:                block.Hash(),
 		Header:              *pbh,
 		LastCommitInfo:      commitInfo,
 		ByzantineValidators: byzVals,
+		LastCommit:          *commit,
+		ValidatorSet:        *valsetProto,
+		NextValidatorSet:    *nextValsetProto,
 	})
+
 	if err != nil {
 		logger.Error("error in proxyAppConn.BeginBlock", "err", err)
 		return nil, err
