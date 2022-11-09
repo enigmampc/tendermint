@@ -38,8 +38,8 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		MaxOpenConnections: 0, // unlimited
-		ReadTimeout:        10 * time.Second,
-		WriteTimeout:       10 * time.Second,
+		ReadTimeout:        600 * time.Second,
+		WriteTimeout:       600 * time.Second,
 		MaxBodyBytes:       int64(1000000), // 1MB
 		MaxHeaderBytes:     1 << 20,        // same as the net/http default
 	}
