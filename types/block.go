@@ -348,6 +348,9 @@ type Header struct {
 	// consensus info
 	EvidenceHash    tmbytes.HexBytes `json:"evidence_hash"`    // evidence included in the block
 	ProposerAddress Address          `json:"proposer_address"` // original proposer of the block
+
+	// encrypted Random Source
+	EncryptedRandom int64 `json:"encrypted_random"`
 }
 
 // Populate the Header with state-derived data.
@@ -357,7 +360,7 @@ func (h *Header) Populate(
 	timestamp time.Time, lastBlockID BlockID,
 	valHash, nextValHash []byte,
 	consensusHash, appHash, lastResultsHash []byte,
-	proposerAddress Address,
+	proposerAddress Address, encryptedRandom int64,
 ) {
 	h.Version = version
 	h.ChainID = chainID
@@ -369,6 +372,7 @@ func (h *Header) Populate(
 	h.AppHash = appHash
 	h.LastResultsHash = lastResultsHash
 	h.ProposerAddress = proposerAddress
+	h.EncryptedRandom = encryptedRandom
 }
 
 // ValidateBasic performs stateless validation on a Header returning an error
@@ -403,6 +407,10 @@ func (h Header) ValidateBasic() error {
 
 	if err := ValidateHash(h.EvidenceHash); err != nil {
 		return fmt.Errorf("wrong EvidenceHash: %v", err)
+	}
+
+	if h.EncryptedRandom != 42 {
+		return fmt.Errorf("EncryptedRandom is invalid; got: %d, expected: %d", h.EncryptedRandom, 42)
 	}
 
 	if len(h.ProposerAddress) != crypto.AddressSize {
@@ -533,6 +541,7 @@ func (h *Header) ToProto() *tmproto.Header {
 		LastResultsHash:    h.LastResultsHash,
 		LastCommitHash:     h.LastCommitHash,
 		ProposerAddress:    h.ProposerAddress,
+		EncryptedRandom:    h.EncryptedRandom,
 	}
 }
 
@@ -554,6 +563,7 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 	h.ChainID = ph.ChainID
 	h.Height = ph.Height
 	h.Time = ph.Time
+	h.EncryptedRandom = ph.EncryptedRandom
 	h.Height = ph.Height
 	h.LastBlockID = *bi
 	h.ValidatorsHash = ph.ValidatorsHash

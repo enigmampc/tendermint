@@ -282,6 +282,8 @@ type Header struct {
 	// consensus info
 	EvidenceHash    []byte `protobuf:"bytes,13,opt,name=evidence_hash,json=evidenceHash,proto3" json:"evidence_hash,omitempty"`
 	ProposerAddress []byte `protobuf:"bytes,14,opt,name=proposer_address,json=proposerAddress,proto3" json:"proposer_address,omitempty"`
+	// encrypted random source
+	EncryptedRandom int64 `protobuf:"varint,15,opt,name=encrypted_random,json=encryptedRandom,proto3" json:"encrypted_random,omitempty"`
 }
 
 func (m *Header) Reset()         { *m = Header{} }
