@@ -409,10 +409,6 @@ func (h Header) ValidateBasic() error {
 		return fmt.Errorf("wrong EvidenceHash: %v", err)
 	}
 
-	if h.EncryptedRandom != 42 {
-		return fmt.Errorf("EncryptedRandom is invalid; got: %d, expected: %d", h.EncryptedRandom, 42)
-	}
-
 	if len(h.ProposerAddress) != crypto.AddressSize {
 		return fmt.Errorf(
 			"invalid ProposerAddress length; got: %d, expected: %d",
