@@ -479,6 +479,7 @@ func (h *Header) Hash() tmbytes.HexBytes {
 		cdcEncode(h.LastResultsHash),
 		cdcEncode(h.EvidenceHash),
 		cdcEncode(h.ProposerAddress),
+		cdcEncode(h.EncryptedRandom),
 	})
 }
 
@@ -565,7 +566,6 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 	h.ChainID = ph.ChainID
 	h.Height = ph.Height
 	h.Time = ph.Time
-	h.EncryptedRandom = ph.EncryptedRandom
 	h.Height = ph.Height
 	h.LastBlockID = *bi
 	h.ValidatorsHash = ph.ValidatorsHash
@@ -577,6 +577,7 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 	h.LastResultsHash = ph.LastResultsHash
 	h.LastCommitHash = ph.LastCommitHash
 	h.ProposerAddress = ph.ProposerAddress
+	h.EncryptedRandom = ph.EncryptedRandom
 
 	return *h, h.ValidateBasic()
 }
