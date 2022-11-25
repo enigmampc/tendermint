@@ -9,6 +9,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 
+	tmenclave "github.com/scrtlabs/tm-secret-enclave"
 	tmstate "github.com/tendermint/tendermint/proto/tendermint/state"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	tmversion "github.com/tendermint/tendermint/proto/tendermint/version"
@@ -252,7 +253,10 @@ func (state State) MakeBlock(
 	}
 
 	// create the randomness
-	var encryptedRandom int64 = 42
+	encryptedRandom, err := tmenclave.GetRandom()
+	if err != nil {
+		panic(err)
+	}
 
 	// Fill rest of header with state data.
 	block.Header.Populate(
