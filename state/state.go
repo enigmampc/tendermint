@@ -265,7 +265,7 @@ func (state State) MakeBlock(
 		timestamp, state.LastBlockID,
 		state.Validators.Hash(), state.NextValidators.Hash(),
 		types.HashConsensusParams(state.ConsensusParams), state.AppHash, state.LastResultsHash,
-		proposerAddress, encryptedRandom,
+		proposerAddress, int64(encryptedRandom),
 	)
 
 	return block, block.MakePartSet(types.BlockPartSizeBytes)
