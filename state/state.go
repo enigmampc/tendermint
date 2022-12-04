@@ -254,6 +254,7 @@ func (state State) MakeBlock(
 
 	// create the randomness
 	encryptedRandom, err := tmenclave.GetRandom()
+	fmt.Println("got random from enclave:", encryptedRandom)
 	if err != nil {
 		panic(err)
 	}
