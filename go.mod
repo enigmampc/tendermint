@@ -30,7 +30,7 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/rs/cors v1.8.2
 	github.com/sasha-s/go-deadlock v0.3.1
-	github.com/scrtlabs/tm-secret-enclave v0.0.0-20221205000246-a30eacad6299
+	github.com/scrtlabs/tm-secret-enclave v0.0.0-20221205000650-a5397452f4c1
 	github.com/snikch/goodman v0.0.0-20171125024755-10e37e294daa
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/viper v1.13.0
