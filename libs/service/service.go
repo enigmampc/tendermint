@@ -136,7 +136,7 @@ func (bs *BaseService) Start() error {
 			atomic.StoreUint32(&bs.started, 0)
 			return ErrAlreadyStopped
 		}
-		bs.Logger.Info("service start",
+		bs.Logger.Debug("service start",
 			"msg",
 			log.NewLazySprintf("Starting %v service", bs.name),
 			"impl",

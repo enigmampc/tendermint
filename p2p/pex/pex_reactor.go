@@ -520,7 +520,7 @@ func (r *Reactor) ensurePeers() {
 		peersCount := len(peers)
 		if peersCount > 0 {
 			peer := peers[tmrand.Int()%peersCount]
-			r.Logger.Info("We need more addresses. Sending pexRequest to random peer", "peer", peer)
+			r.Logger.Debug("We need more addresses. Sending pexRequest to random peer", "peer", peer)
 			r.RequestAddrs(peer)
 		}
 
