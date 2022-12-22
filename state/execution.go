@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	tmenclave "github.com/scrtlabs/tm-secret-enclave"
 	abci "github.com/tendermint/tendermint/abci/types"
 	cryptoenc "github.com/tendermint/tendermint/crypto/encoding"
 	"github.com/tendermint/tendermint/libs/fail"
@@ -198,6 +199,30 @@ func (blockExec *BlockExecutor) ApplyBlock(
 	// Events are fired after everything else.
 	// NOTE: if we crash between Commit and Save, events wont be fired during replay
 	fireEvents(blockExec.logger, blockExec.eventBus, block, abciResponses, validatorUpdates)
+
+	// fmt.Println("vals: ", state.NextValidators)
+
+	// TODO tom: send validator set to enclave here
+	nextValSetProto, err := state.NextValidators.ToProto()
+	if err != nil {
+		return state, 0, fmt.Errorf("error in marshaling validator set: %v", err)
+	}
+
+	// fmt.Println("proto: ", nextValSetProto)
+
+	nextValSetBytes, err := nextValSetProto.Marshal()
+	if err != nil {
+		return state, 0, fmt.Errorf("error in marshaling validator set: %v", err)
+	}
+
+	// fmt.Println("bytes: ", nextValSetBytes)
+
+	err = tmenclave.SubmitNextValidatorSet(nextValSetBytes)
+	if err != nil {
+		return state, 0, fmt.Errorf("error submitting validator set to enclave: %v", err)
+	}
+
+	fmt.Println("Submitted validator set to enclave without errors!")
 
 	return state, retainHeight, nil
 }
