@@ -253,11 +253,27 @@ func (state State) MakeBlock(
 	}
 
 	// create the randomness
-	encryptedRandom, err := tmenclave.GetRandom()
-	fmt.Println("got random from enclave:", encryptedRandom)
+	encryptedRandomEncoded, err := tmenclave.GetRandom()
 	if err != nil {
+		println("Error getting random from enclave")
 		panic(err)
 	}
+
+	var encRandDecoded tmproto.EncryptedRandom
+
+	err = encRandDecoded.Unmarshal(encryptedRandomEncoded)
+	if err != nil {
+		println("Failed to unmarshal encryptedRandom")
+		panic(err)
+	}
+
+	encryptedRandom, err := types.EnclaveRandomFromProto(&encRandDecoded)
+	if err != nil {
+		println("Failed to convert tmproto to type")
+		panic(err)
+	}
+
+	println("Done getting random from enclave")
 
 	// Fill rest of header with state data.
 	block.Header.Populate(
@@ -265,7 +281,7 @@ func (state State) MakeBlock(
 		timestamp, state.LastBlockID,
 		state.Validators.Hash(), state.NextValidators.Hash(),
 		types.HashConsensusParams(state.ConsensusParams), state.AppHash, state.LastResultsHash,
-		proposerAddress, int64(encryptedRandom),
+		proposerAddress, *encryptedRandom,
 	)
 
 	return block, block.MakePartSet(types.BlockPartSizeBytes)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	tmenclave "github.com/scrtlabs/tm-secret-enclave"
 	"io/ioutil"
 	"os"
 	"runtime/debug"
@@ -1279,6 +1280,7 @@ func (cs *State) defaultDoPrevote(height int64, round int32) {
 		cs.signAddVote(tmproto.PrevoteType, nil, types.PartSetHeader{})
 		return
 	}
+	// todo tm-enclave: need to add validation of encrypted random bytes
 
 	// Prevote cs.ProposalBlock
 	// NOTE: the proposal signature is validated when it is received,
@@ -1405,6 +1407,13 @@ func (cs *State) enterPrecommit(height int64, round int32) {
 
 	// If +2/3 prevoted for proposal block, stage and precommit it
 	if cs.ProposalBlock.HashesTo(blockID.Hash) {
+
+		encryptedRandom, err := tmenclave.GetRandom()
+		fmt.Println("prevote example call to enclave. Got random: ", encryptedRandom)
+		if err != nil {
+			panic(err)
+		}
+
 		logger.Debug("precommit step; +2/3 prevoted proposal block; locking", "hash", blockID.Hash)
 
 		// Validate the block.

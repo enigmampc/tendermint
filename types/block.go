@@ -350,7 +350,7 @@ type Header struct {
 	ProposerAddress Address          `json:"proposer_address"` // original proposer of the block
 
 	// encrypted Random Source
-	EncryptedRandom int64 `json:"encrypted_random"`
+	EncryptedRandom EnclaveRandom `json:"encrypted_random"`
 }
 
 // Populate the Header with state-derived data.
@@ -360,7 +360,7 @@ func (h *Header) Populate(
 	timestamp time.Time, lastBlockID BlockID,
 	valHash, nextValHash []byte,
 	consensusHash, appHash, lastResultsHash []byte,
-	proposerAddress Address, encryptedRandom int64,
+	proposerAddress Address, encryptedRandom EnclaveRandom,
 ) {
 	h.Version = version
 	h.ChainID = chainID
@@ -540,7 +540,7 @@ func (h *Header) ToProto() *tmproto.Header {
 		LastResultsHash:    h.LastResultsHash,
 		LastCommitHash:     h.LastCommitHash,
 		ProposerAddress:    h.ProposerAddress,
-		EncryptedRandom:    h.EncryptedRandom,
+		EncryptedRandom:    h.EncryptedRandom.ToProto(),
 	}
 }
 
@@ -554,6 +554,11 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 	h := new(Header)
 
 	bi, err := BlockIDFromProto(&ph.LastBlockId)
+	if err != nil {
+		return Header{}, err
+	}
+
+	encRandom, err := EnclaveRandomFromProto(ph.EncryptedRandom)
 	if err != nil {
 		return Header{}, err
 	}
@@ -573,7 +578,7 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 	h.LastResultsHash = ph.LastResultsHash
 	h.LastCommitHash = ph.LastCommitHash
 	h.ProposerAddress = ph.ProposerAddress
-	h.EncryptedRandom = ph.EncryptedRandom
+	h.EncryptedRandom = *encRandom
 
 	return *h, h.ValidateBasic()
 }

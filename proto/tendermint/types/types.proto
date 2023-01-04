@@ -81,7 +81,13 @@ message Header {
   bytes proposer_address = 14;  // original proposer of the block
 
   // encrypted random
-  int64 encrypted_random = 15; // a random number encrypted by the proposer to be used in contracts
+  EncryptedRandom encrypted_random = 15; // a random number encrypted by the proposer to be used in contracts
+}
+
+// Data contains the set of transactions included in the block
+message EncryptedRandom {
+  bytes random = 1;
+  bytes proof = 2;
 }
 
 // Data contains the set of transactions included in the block
