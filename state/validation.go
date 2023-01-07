@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	tmenclave "github.com/scrtlabs/tm-secret-enclave"
 
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/types"
@@ -109,6 +110,12 @@ func validateBlock(state State, block *types.Block) error {
 		return fmt.Errorf("block.Header.ProposerAddress %X is not a validator",
 			block.ProposerAddress,
 		)
+	}
+
+	// println("Validating block {}", block.Height, "with random: ", string(block.EncryptedRandom.Random), "proof: ", string(block.EncryptedRandom.Proof), "hash: ", block.DataHash)
+	proofValid := tmenclave.ValidateRandom(block.EncryptedRandom.Random, block.EncryptedRandom.Proof, block.DataHash, uint64(block.Height))
+	if !proofValid {
+		return fmt.Errorf("invalid proof for encrypted random")
 	}
 
 	// Validate block Time

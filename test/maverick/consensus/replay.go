@@ -500,8 +500,10 @@ func (h *Handshaker) replayBlock(state sm.State, height int64, proxyApp proxy.Ap
 	blockExec := sm.NewBlockExecutor(h.stateStore, h.logger, proxyApp, emptyMempool{}, sm.EmptyEvidencePool{})
 	blockExec.SetEventBus(h.eventBus)
 
+	blockNext := h.store.LoadBlock(height + 1)
+
 	var err error
-	state, _, err = blockExec.ApplyBlock(state, meta.BlockID, block)
+	state, _, err = blockExec.ApplyBlock(state, meta.BlockID, block, nil, blockNext.LastCommit)
 	if err != nil {
 		return sm.State{}, err
 	}

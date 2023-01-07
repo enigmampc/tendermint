@@ -500,7 +500,12 @@ func (h *Handshaker) replayBlock(state sm.State, height int64, proxyApp proxy.Ap
 	blockExec.SetEventBus(h.eventBus)
 
 	var err error
-	state, _, err = blockExec.ApplyBlock(state, meta.BlockID, block)
+
+	commit := h.store.LoadBlockCommit(height)
+
+	println("tm-enclave: applying block ", height, "commit n+1: ", commit)
+
+	state, _, err = blockExec.ApplyBlock(state, meta.BlockID, block, nil, commit)
 	if err != nil {
 		return sm.State{}, err
 	}

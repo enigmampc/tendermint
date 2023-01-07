@@ -2,6 +2,7 @@ package state
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -252,26 +253,48 @@ func (state State) MakeBlock(
 		timestamp = MedianTime(commit, state.LastValidators)
 	}
 
-	// create the randomness
-	encryptedRandomEncoded, err := tmenclave.GetRandom()
+	// Submit next set of validators to enclave
+	valSetProto, err := state.Validators.ToProto()
+	if err != nil {
+		panic(err)
+	}
+	valSetBytes, err := valSetProto.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	err = tmenclave.SubmitValidatorSet(valSetBytes)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Submitted validator set to enclave when generating block for height ", block.Height)
+	//// create the randomness
+	random, proof, err := tmenclave.GetRandom(block.DataHash, uint64(block.Height))
 	if err != nil {
 		println("Error getting random from enclave")
-		panic(err)
+		return nil, nil
 	}
+	encryptedRandom := types.EnclaveRandom{Random: random, Proof: proof}
 
-	var encRandDecoded tmproto.EncryptedRandom
-
-	err = encRandDecoded.Unmarshal(encryptedRandomEncoded)
-	if err != nil {
-		println("Failed to unmarshal encryptedRandom")
-		panic(err)
+	println("Validating proposal ", block.Height, "with random: ", hex.EncodeToString(random), "proof: ", hex.EncodeToString(proof), "hash: ", block.DataHash)
+	res := tmenclave.ValidateRandom(random, proof, block.DataHash, uint64(block.Height))
+	if !res {
+		println("Invalid random generated")
+		return nil, nil
 	}
-
-	encryptedRandom, err := types.EnclaveRandomFromProto(&encRandDecoded)
-	if err != nil {
-		println("Failed to convert tmproto to type")
-		panic(err)
-	}
+	//
+	//var encRandDecoded tmproto.EncryptedRandom
+	//
+	//err = encRandDecoded.Unmarshal(encryptedRandomEncoded)
+	//if err != nil {
+	//	println("Failed to unmarshal encryptedRandom")
+	//	panic(err)
+	//}
+	//
+	//encryptedRandom, err := types.EnclaveRandomFromProto(&encRandDecoded)
+	//if err != nil {
+	//	println("Failed to convert tmproto to type")
+	//	panic(err)
+	//}
 
 	println("Done getting random from enclave")
 
@@ -281,7 +304,7 @@ func (state State) MakeBlock(
 		timestamp, state.LastBlockID,
 		state.Validators.Hash(), state.NextValidators.Hash(),
 		types.HashConsensusParams(state.ConsensusParams), state.AppHash, state.LastResultsHash,
-		proposerAddress, *encryptedRandom,
+		proposerAddress, encryptedRandom,
 	)
 
 	return block, block.MakePartSet(types.BlockPartSizeBytes)

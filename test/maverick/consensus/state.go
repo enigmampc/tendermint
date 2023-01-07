@@ -1467,7 +1467,9 @@ func (cs *State) finalizeCommit(height int64) {
 		return
 	}
 
-	blockID, ok := cs.Votes.Precommits(cs.CommitRound).TwoThirdsMajority()
+	precommits := cs.Votes.Precommits(cs.CommitRound)
+
+	blockID, ok := precommits.TwoThirdsMajority()
 	block, blockParts := cs.ProposalBlock, cs.ProposalBlockParts
 
 	if !ok {
@@ -1497,7 +1499,7 @@ func (cs *State) finalizeCommit(height int64) {
 	if cs.blockStore.Height() < block.Height {
 		// NOTE: the seenCommit is local justification to commit this block,
 		// but may differ from the LastCommit included in the next block
-		precommits := cs.Votes.Precommits(cs.CommitRound)
+		// precommits := cs.Votes.Precommits(cs.CommitRound)
 		seenCommit := precommits.MakeCommit()
 		cs.blockStore.SaveBlock(block, blockParts, seenCommit)
 	} else {
@@ -1538,7 +1540,10 @@ func (cs *State) finalizeCommit(height int64) {
 	stateCopy, retainHeight, err = cs.blockExec.ApplyBlock(
 		stateCopy,
 		types.BlockID{Hash: block.Hash(), PartSetHeader: blockParts.Header()},
-		block)
+		block,
+		precommits,
+		nil,
+	)
 	if err != nil {
 		cs.Logger.Error("Error on ApplyBlock", "err", err)
 		return

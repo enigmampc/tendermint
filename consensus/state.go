@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	tmenclave "github.com/scrtlabs/tm-secret-enclave"
 	"io/ioutil"
 	"os"
 	"runtime/debug"
@@ -1346,7 +1345,9 @@ func (cs *State) enterPrecommit(height int64, round int32) {
 	}()
 
 	// check for a polka
-	blockID, ok := cs.Votes.Prevotes(round).TwoThirdsMajority()
+	// tm-enclave: here prevotes
+	prevotes := cs.Votes.Prevotes(round)
+	blockID, ok := prevotes.TwoThirdsMajority()
 
 	// If we don't have a polka, we must precommit nil.
 	if !ok {
@@ -1408,11 +1409,11 @@ func (cs *State) enterPrecommit(height int64, round int32) {
 	// If +2/3 prevoted for proposal block, stage and precommit it
 	if cs.ProposalBlock.HashesTo(blockID.Hash) {
 
-		encryptedRandom, err := tmenclave.GetRandom()
-		fmt.Println("prevote example call to enclave. Got random: ", encryptedRandom)
-		if err != nil {
-			panic(err)
-		}
+		//encryptedRandom, err := tmenclave.GetRandom()
+		//fmt.Println("prevote example call to enclave. Got random: ", encryptedRandom)
+		//if err != nil {
+		//	panic(err)
+		//}
 
 		logger.Debug("precommit step; +2/3 prevoted proposal block; locking", "hash", blockID.Hash)
 
@@ -1591,7 +1592,8 @@ func (cs *State) finalizeCommit(height int64) {
 
 	cs.calculatePrevoteMessageDelayMetrics()
 
-	blockID, ok := cs.Votes.Precommits(cs.CommitRound).TwoThirdsMajority()
+	precommits := cs.Votes.Precommits(cs.CommitRound)
+	blockID, ok := precommits.TwoThirdsMajority()
 	block, blockParts := cs.ProposalBlock, cs.ProposalBlockParts
 
 	if !ok {
@@ -1622,7 +1624,7 @@ func (cs *State) finalizeCommit(height int64) {
 	if cs.blockStore.Height() < block.Height {
 		// NOTE: the seenCommit is local justification to commit this block,
 		// but may differ from the LastCommit included in the next block
-		precommits := cs.Votes.Precommits(cs.CommitRound)
+		// precommits := cs.Votes.Precommits(cs.CommitRound)
 		seenCommit := precommits.MakeCommit()
 		cs.blockStore.SaveBlock(block, blockParts, seenCommit)
 	} else {
@@ -1672,6 +1674,8 @@ func (cs *State) finalizeCommit(height int64) {
 			PartSetHeader: blockParts.Header(),
 		},
 		block,
+		precommits,
+		nil,
 	)
 	if err != nil {
 		logger.Error("failed to apply block", "err", err)

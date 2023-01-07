@@ -142,7 +142,9 @@ func newBlockchainReactor(
 		thisParts := thisBlock.MakePartSet(types.BlockPartSizeBytes)
 		blockID := types.BlockID{Hash: thisBlock.Hash(), PartSetHeader: thisParts.Header()}
 
-		state, _, err = blockExec.ApplyBlock(state, blockID, thisBlock)
+		thisCommit := types.NewCommit(blockHeight, 1, types.BlockID{}, nil)
+
+		state, _, err = blockExec.ApplyBlock(state, blockID, thisBlock, nil, thisCommit)
 		if err != nil {
 			panic(fmt.Errorf("error apply block: %w", err))
 		}
