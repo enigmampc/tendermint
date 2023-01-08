@@ -322,15 +322,12 @@ func execBlockOnProxyApp(
 		return nil, errors.New("nil header")
 	}
 
-	blockId, ok := precommits.TwoThirdsMajority()
-	if !ok {
-		panic("Should never get here with a non majority precommit")
-	}
-
 	//vals, err := store.LoadValidators(block.Height)
 	//if err != nil {
 	//	return nil, errors.New("nil validators for height")
 	//}
+
+	println("New version, hello!")
 
 	var commitStruct types.Commit
 
@@ -338,6 +335,12 @@ func execBlockOnProxyApp(
 	if commits != nil {
 		commitStruct = *commits
 	} else {
+
+		blockId, ok := precommits.TwoThirdsMajority()
+		if !ok {
+			panic("Should never get here with a non majority precommit")
+		}
+
 		// if not use the precommits
 		var signatures []types.CommitSig
 		for _, vote := range precommits.List() {
@@ -585,9 +588,10 @@ func ExecCommitBlock(
 	logger log.Logger,
 	store Store,
 	initialHeight int64,
+	commits *types.Commit,
 ) ([]byte, error) {
-	// todo: update with replay commits
-	_, err := execBlockOnProxyApp(logger, appConnConsensus, block, store, initialHeight, nil, nil)
+
+	_, err := execBlockOnProxyApp(logger, appConnConsensus, block, store, initialHeight, nil, commits)
 	if err != nil {
 		logger.Error("failed executing block on proxy app", "height", block.Height, "err", err)
 		return nil, err
