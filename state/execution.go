@@ -131,7 +131,7 @@ func (blockExec *BlockExecutor) ValidateBlock(state State, block *types.Block) e
 // from outside this package to process and commit an entire block.
 // It takes a blockID to avoid recomputing the parts hash.
 func (blockExec *BlockExecutor) ApplyBlock(
-	state State, blockID types.BlockID, block *types.Block, signatures types.CommitOrPrecommit,
+	state State, blockID types.BlockID, block *types.Block, commit *types.Commit,
 ) (State, int64, error) {
 
 	if err := validateBlock(state, block); err != nil {
@@ -156,7 +156,7 @@ func (blockExec *BlockExecutor) ApplyBlock(
 
 	startTime := time.Now().UnixNano()
 	abciResponses, err := execBlockOnProxyApp(
-		blockExec.logger, blockExec.proxyApp, block, blockExec.store, state.InitialHeight, signatures,
+		blockExec.logger, blockExec.proxyApp, block, blockExec.store, state.InitialHeight, commit,
 	)
 	endTime := time.Now().UnixNano()
 	blockExec.metrics.BlockProcessingTime.Observe(float64(endTime-startTime) / 1000000)
@@ -280,7 +280,7 @@ func execBlockOnProxyApp(
 	block *types.Block,
 	store Store,
 	initialHeight int64,
-	signatures types.CommitOrPrecommit,
+	commit *types.Commit,
 ) (*tmstate.ABCIResponses, error) {
 	var validTxs, invalidTxs = 0, 0
 
@@ -330,43 +330,43 @@ func execBlockOnProxyApp(
 
 	//println("New version, hello!")
 	// println("commits exists: ", commits != nil, "precommits exist: ", precommits != nil)
-	var commitStruct types.Commit
+	// var commitStruct types.Commit
 
 	// if we got the commits for this block
-	if signatures.Commit != nil {
-		commitStruct = *signatures.Commit
-	} else {
-
-		blockId, ok := signatures.Precommit.TwoThirdsMajority()
-		if !ok {
-			panic("Should never get here with a non majority precommit")
-		}
-
-		// if not use the precommits
-		var precommitSignatures []types.CommitSig
-		for _, vote := range signatures.Precommit.List() {
-			precommitSignatures = append(
-				precommitSignatures,
-				types.NewCommitSigForBlock(vote.Signature, vote.ValidatorAddress, vote.Timestamp),
-			)
-		}
-
-		//for signature in precommits.GetByIndex()
-		//
-		commitStruct = types.Commit{
-			Height:     block.Height,
-			Round:      signatures.Precommit.GetRound(),
-			BlockID:    blockId,
-			Signatures: precommitSignatures,
-		}
-	}
+	//if signatures.Commit != nil {
+	//	commitStruct = *signatures.Commit
+	//} else {
+	//
+	//	blockId, ok := signatures.Precommit.TwoThirdsMajority()
+	//	if !ok {
+	//		panic("Should never get here with a non majority precommit")
+	//	}
+	//
+	//	// if not use the precommits
+	//	var precommitSignatures []types.CommitSig
+	//	for _, vote := range signatures.Precommit.List() {
+	//		precommitSignatures = append(
+	//			precommitSignatures,
+	//			types.NewCommitSigForBlock(vote.Signature, vote.ValidatorAddress, vote.Timestamp),
+	//		)
+	//	}
+	//
+	//	//for signature in precommits.GetByIndex()
+	//	//
+	//	commitStruct = types.Commit{
+	//		Height:     block.Height,
+	//		Round:      signatures.Precommit.GetRound(),
+	//		BlockID:    blockId,
+	//		Signatures: precommitSignatures,
+	//	}
+	//}
 
 	abciResponses.BeginBlock, err = proxyAppConn.BeginBlockSync(abci.RequestBeginBlock{
 		Hash:                block.Hash(),
 		Header:              *pbh,
 		LastCommitInfo:      commitInfo,
 		ByzantineValidators: byzVals,
-		Commit:              commitStruct.ToProto(),
+		Commit:              commit.ToProto(),
 	})
 
 	if err != nil {
@@ -592,15 +592,10 @@ func ExecCommitBlock(
 	logger log.Logger,
 	store Store,
 	initialHeight int64,
-	commits *types.Commit,
+	commit *types.Commit,
 ) ([]byte, error) {
 
-	signatures := types.CommitOrPrecommit{
-		Commit:    commits,
-		Precommit: nil,
-	}
-
-	_, err := execBlockOnProxyApp(logger, appConnConsensus, block, store, initialHeight, signatures)
+	_, err := execBlockOnProxyApp(logger, appConnConsensus, block, store, initialHeight, commit)
 	if err != nil {
 		logger.Error("failed executing block on proxy app", "height", block.Height, "err", err)
 		return nil, err
