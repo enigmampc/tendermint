@@ -1,6 +1,7 @@
 package state
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	tmenclave "github.com/scrtlabs/tm-secret-enclave"
@@ -130,7 +131,7 @@ func (blockExec *BlockExecutor) ValidateBlock(state State, block *types.Block) e
 // from outside this package to process and commit an entire block.
 // It takes a blockID to avoid recomputing the parts hash.
 func (blockExec *BlockExecutor) ApplyBlock(
-	state State, blockID types.BlockID, block *types.Block, precommits *types.VoteSet, commits *types.Commit,
+	state State, blockID types.BlockID, block *types.Block, signatures types.CommitOrPrecommit,
 ) (State, int64, error) {
 
 	if err := validateBlock(state, block); err != nil {
@@ -146,15 +147,16 @@ func (blockExec *BlockExecutor) ApplyBlock(
 	if err != nil {
 		return state, 0, fmt.Errorf("error in marshaling validator set: %v", err)
 	}
-	err = tmenclave.SubmitValidatorSet(valSetBytes)
+	err = tmenclave.SubmitValidatorSet(valSetBytes, uint64(block.Height))
 	if err != nil {
 		return state, 0, fmt.Errorf("error submitting validator set to enclave: %v", err)
 	}
-	fmt.Println("Submitted validator set to enclave without errors! for height ", block.Height)
+	// todo: change to log level debug later
+	blockExec.logger.Info(fmt.Sprintf("Submitted validator set to enclave for height %d, val set hash: %s", block.Height, hex.EncodeToString(block.ValidatorsHash)))
 
 	startTime := time.Now().UnixNano()
 	abciResponses, err := execBlockOnProxyApp(
-		blockExec.logger, blockExec.proxyApp, block, blockExec.store, state.InitialHeight, precommits, commits,
+		blockExec.logger, blockExec.proxyApp, block, blockExec.store, state.InitialHeight, signatures,
 	)
 	endTime := time.Now().UnixNano()
 	blockExec.metrics.BlockProcessingTime.Observe(float64(endTime-startTime) / 1000000)
@@ -278,8 +280,7 @@ func execBlockOnProxyApp(
 	block *types.Block,
 	store Store,
 	initialHeight int64,
-	precommits *types.VoteSet,
-	commits *types.Commit,
+	signatures types.CommitOrPrecommit,
 ) (*tmstate.ABCIResponses, error) {
 	var validTxs, invalidTxs = 0, 0
 
@@ -327,33 +328,36 @@ func execBlockOnProxyApp(
 	//	return nil, errors.New("nil validators for height")
 	//}
 
-	println("New version, hello!")
-
+	//println("New version, hello!")
+	// println("commits exists: ", commits != nil, "precommits exist: ", precommits != nil)
 	var commitStruct types.Commit
 
 	// if we got the commits for this block
-	if commits != nil {
-		commitStruct = *commits
+	if signatures.Commit != nil {
+		commitStruct = *signatures.Commit
 	} else {
 
-		blockId, ok := precommits.TwoThirdsMajority()
+		blockId, ok := signatures.Precommit.TwoThirdsMajority()
 		if !ok {
 			panic("Should never get here with a non majority precommit")
 		}
 
 		// if not use the precommits
-		var signatures []types.CommitSig
-		for _, vote := range precommits.List() {
-			signatures = append(signatures, types.NewCommitSigForBlock(vote.Signature, vote.ValidatorAddress, vote.Timestamp))
+		var precommitSignatures []types.CommitSig
+		for _, vote := range signatures.Precommit.List() {
+			precommitSignatures = append(
+				precommitSignatures,
+				types.NewCommitSigForBlock(vote.Signature, vote.ValidatorAddress, vote.Timestamp),
+			)
 		}
 
 		//for signature in precommits.GetByIndex()
 		//
 		commitStruct = types.Commit{
 			Height:     block.Height,
-			Round:      precommits.GetRound(),
+			Round:      signatures.Precommit.GetRound(),
 			BlockID:    blockId,
-			Signatures: signatures,
+			Signatures: precommitSignatures,
 		}
 	}
 
@@ -591,7 +595,12 @@ func ExecCommitBlock(
 	commits *types.Commit,
 ) ([]byte, error) {
 
-	_, err := execBlockOnProxyApp(logger, appConnConsensus, block, store, initialHeight, nil, commits)
+	signatures := types.CommitOrPrecommit{
+		Commit:    commits,
+		Precommit: nil,
+	}
+
+	_, err := execBlockOnProxyApp(logger, appConnConsensus, block, store, initialHeight, signatures)
 	if err != nil {
 		logger.Error("failed executing block on proxy app", "height", block.Height, "err", err)
 		return nil, err

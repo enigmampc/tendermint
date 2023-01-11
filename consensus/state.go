@@ -1667,6 +1667,10 @@ func (cs *State) finalizeCommit(height int64) {
 		retainHeight int64
 	)
 
+	signatures := types.CommitOrPrecommit{
+		Commit:    nil,
+		Precommit: precommits,
+	}
 	stateCopy, retainHeight, err = cs.blockExec.ApplyBlock(
 		stateCopy,
 		types.BlockID{
@@ -1674,8 +1678,7 @@ func (cs *State) finalizeCommit(height int64) {
 			PartSetHeader: blockParts.Header(),
 		},
 		block,
-		precommits,
-		nil,
+		signatures,
 	)
 	if err != nil {
 		logger.Error("failed to apply block", "err", err)

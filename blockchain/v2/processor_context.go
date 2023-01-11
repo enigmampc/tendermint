@@ -30,7 +30,7 @@ func newProcessorContext(st blockStore, ex blockApplier, s state.State) *pContex
 }
 
 func (pc *pContext) applyBlock(blockID types.BlockID, block *types.Block, commit *types.Commit) error {
-	newState, _, err := pc.applier.ApplyBlock(pc.state, blockID, block, nil, commit)
+	newState, _, err := pc.applier.ApplyBlock(pc.state, blockID, block, types.GenericSignatureFromCommit(commit))
 	pc.state = newState
 	return err
 }

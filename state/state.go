@@ -2,7 +2,6 @@ package state
 
 import (
 	"bytes"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -256,30 +255,36 @@ func (state State) MakeBlock(
 	// Submit next set of validators to enclave
 	valSetProto, err := state.Validators.ToProto()
 	if err != nil {
-		panic(err)
+		panic("Failed to convert validator set to protobuf")
 	}
 	valSetBytes, err := valSetProto.Marshal()
 	if err != nil {
-		panic(err)
+		panic("Failed to marshal validator set")
 	}
-	err = tmenclave.SubmitValidatorSet(valSetBytes)
+	err = tmenclave.SubmitValidatorSet(valSetBytes, uint64(height))
 	if err != nil {
-		panic(err)
+		panic("Failed to submit validator set to enclave")
 	}
-	fmt.Println("Submitted validator set to enclave when generating block for height ", block.Height)
+	//fmt.Println(
+	//	"PROPOSAL: Submitted validator set to enclave when generating block for height ",
+	//	block.Height,
+	//	"val hash: ",
+	//	hex.EncodeToString(state.Validators.Hash()),
+	//	"val set bytes: ",
+	//	hex.EncodeToString(valSetBytes),
+	//)
 	//// create the randomness
 	random, proof, err := tmenclave.GetRandom(block.DataHash, uint64(block.Height))
 	if err != nil {
-		println("Error getting random from enclave")
-		return nil, nil
+		panic("Failed to submit validator set to enclave")
 	}
 	encryptedRandom := types.EnclaveRandom{Random: random, Proof: proof}
 
-	println("Validating proposal ", block.Height, "with random: ", hex.EncodeToString(random), "proof: ", hex.EncodeToString(proof), "hash: ", block.DataHash)
+	// println("Validating proposal ", block.Height, "with random: ", hex.EncodeToString(random), "proof: ", hex.EncodeToString(proof), "hash: ", hex.EncodeToString(block.DataHash))
 	res := tmenclave.ValidateRandom(random, proof, block.DataHash, uint64(block.Height))
 	if !res {
-		println("Invalid random generated")
-		return nil, nil
+		// println("Invalid random generated")
+		panic("Failed to validate generated random")
 	}
 	//
 	//var encRandDecoded tmproto.EncryptedRandom
@@ -296,7 +301,7 @@ func (state State) MakeBlock(
 	//	panic(err)
 	//}
 
-	println("Done getting random from enclave")
+	// println("Done getting random from enclave")
 
 	// Fill rest of header with state data.
 	block.Header.Populate(

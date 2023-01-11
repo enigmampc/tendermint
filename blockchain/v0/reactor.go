@@ -401,7 +401,13 @@ FOR_LOOP:
 
 			// TODO: same thing for app - but we would need a way to
 			// get the hash without persisting the state
-			state, _, err = bcR.blockExec.ApplyBlock(state, firstID, first, nil, second.LastCommit)
+
+			signatures := types.CommitOrPrecommit{
+				Commit:    second.LastCommit,
+				Precommit: nil,
+			}
+
+			state, _, err = bcR.blockExec.ApplyBlock(state, firstID, first, signatures)
 			if err != nil {
 				// TODO This is bad, are we zombie?
 				panic(fmt.Sprintf("Failed to process committed block (%d:%X): %v", first.Height, first.Hash(), err))

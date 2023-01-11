@@ -605,6 +605,25 @@ const (
 	MaxCommitSigBytes int64 = 109
 )
 
+// ------------------------------------
+
+type CommitOrPrecommit struct {
+	Commit    *Commit  `json:"commit"`
+	Precommit *VoteSet `json:"precommit"`
+}
+
+func GenericSignatureFromCommit(commit *Commit) CommitOrPrecommit {
+	return CommitOrPrecommit{
+		Commit: commit,
+	}
+}
+
+func GenericSignatureFromPrecommit(precommit *VoteSet) CommitOrPrecommit {
+	return CommitOrPrecommit{
+		Precommit: precommit,
+	}
+}
+
 // CommitSig is a part of the Vote included in a Commit.
 type CommitSig struct {
 	BlockIDFlag      BlockIDFlag `json:"block_id_flag"`

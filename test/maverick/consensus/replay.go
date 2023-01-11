@@ -504,8 +504,13 @@ func (h *Handshaker) replayBlock(state sm.State, height int64, proxyApp proxy.Ap
 
 	blockNext := h.store.LoadBlock(height + 1)
 
+	signatures := types.CommitOrPrecommit{
+		Commit:    blockNext.LastCommit,
+		Precommit: nil,
+	}
+
 	var err error
-	state, _, err = blockExec.ApplyBlock(state, meta.BlockID, block, nil, blockNext.LastCommit)
+	state, _, err = blockExec.ApplyBlock(state, meta.BlockID, block, signatures)
 	if err != nil {
 		return sm.State{}, err
 	}
