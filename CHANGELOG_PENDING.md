@@ -18,7 +18,7 @@
 
 ### IMPROVEMENTS
 
-- [consensus] \#9760 Save peer LastCommit correctly to achieve 50% reduction in gossiped precommits. (@williambanfield)
+- [#8574](https://github.com/tendermint/tendermint/pull/8574) Add public API `BlockStore.Rollback`.
 
 ### BUG FIXES
 
