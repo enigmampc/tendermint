@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	tmenclave "github.com/scrtlabs/tm-secret-enclave"
-
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/types"
 )
@@ -114,10 +113,13 @@ func validateBlock(state State, block *types.Block) error {
 	}
 
 	//println("Validating block {}", block.Height, "with random: ", hex.EncodeToString(block.EncryptedRandom.Random), "proof: ", hex.EncodeToString(block.EncryptedRandom.Proof), "hash: ", hex.EncodeToString(block.DataHash))
-	proofValid := tmenclave.ValidateRandom(block.EncryptedRandom.Random, block.EncryptedRandom.Proof, block.DataHash, uint64(block.Height))
-	if !proofValid {
-		return fmt.Errorf("invalid proof for encrypted random. Height: %d, Random: %s, Proof: %s, DataHash: %s",
-			block.Height, hex.EncodeToString(block.EncryptedRandom.Random), hex.EncodeToString(block.EncryptedRandom.Proof), hex.EncodeToString(block.DataHash))
+
+	if block.EncryptedRandom != nil {
+		proofValid := tmenclave.ValidateRandom(block.EncryptedRandom.Random, block.EncryptedRandom.Proof, block.DataHash, uint64(block.Height))
+		if !proofValid {
+			return fmt.Errorf("invalid proof for encrypted random. Height: %d, Random: %s, Proof: %s, DataHash: %s",
+				block.Height, hex.EncodeToString(block.EncryptedRandom.Random), hex.EncodeToString(block.EncryptedRandom.Proof), hex.EncodeToString(block.DataHash))
+		}
 	}
 
 	// Validate block Time

@@ -350,7 +350,7 @@ type Header struct {
 	ProposerAddress Address          `json:"proposer_address"` // original proposer of the block
 
 	// encrypted Random Source
-	EncryptedRandom EnclaveRandom `json:"encrypted_random"`
+	EncryptedRandom *EnclaveRandom `json:"encrypted_random"`
 }
 
 // Populate the Header with state-derived data.
@@ -360,7 +360,7 @@ func (h *Header) Populate(
 	timestamp time.Time, lastBlockID BlockID,
 	valHash, nextValHash []byte,
 	consensusHash, appHash, lastResultsHash []byte,
-	proposerAddress Address, encryptedRandom EnclaveRandom,
+	proposerAddress Address, encryptedRandom *EnclaveRandom,
 ) {
 	h.Version = version
 	h.ChainID = chainID
@@ -460,7 +460,8 @@ func (h *Header) Hash() tmbytes.HexBytes {
 	if err != nil {
 		return nil
 	}
-	return merkle.HashFromByteSlices([][]byte{
+
+	valuesToHash := [][]byte{
 		hbz,
 		cdcEncode(h.ChainID),
 		cdcEncode(h.Height),
@@ -475,8 +476,13 @@ func (h *Header) Hash() tmbytes.HexBytes {
 		cdcEncode(h.LastResultsHash),
 		cdcEncode(h.EvidenceHash),
 		cdcEncode(h.ProposerAddress),
-		cdcEncode(h.EncryptedRandom),
-	})
+	}
+
+	if h.EncryptedRandom != nil {
+		valuesToHash = append(valuesToHash, cdcEncode(h.EncryptedRandom))
+	}
+
+	return merkle.HashFromByteSlices(valuesToHash)
 }
 
 // StringIndented returns an indented string representation of the header.
@@ -558,10 +564,10 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 		return Header{}, err
 	}
 
-	encRandom, err := EnclaveRandomFromProto(ph.EncryptedRandom)
-	if err != nil {
-		return Header{}, err
-	}
+	//encRandom, err := EnclaveRandomFromProto(ph.EncryptedRandom)
+	//if err != nil {
+	//	return Header{}, err
+	//}
 
 	h.Version = ph.Version
 	h.ChainID = ph.ChainID
@@ -578,7 +584,7 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 	h.LastResultsHash = ph.LastResultsHash
 	h.LastCommitHash = ph.LastCommitHash
 	h.ProposerAddress = ph.ProposerAddress
-	h.EncryptedRandom = *encRandom
+	h.EncryptedRandom = nil
 
 	return *h, h.ValidateBasic()
 }

@@ -265,43 +265,20 @@ func (state State) MakeBlock(
 	if err != nil {
 		panic("Failed to submit validator set to enclave")
 	}
-	//fmt.Println(
-	//	"PROPOSAL: Submitted validator set to enclave when generating block for height ",
-	//	block.Height,
-	//	"val hash: ",
-	//	hex.EncodeToString(state.Validators.Hash()),
-	//	"val set bytes: ",
-	//	hex.EncodeToString(valSetBytes),
-	//)
-	//// create the randomness
-	random, proof, err := tmenclave.GetRandom(block.DataHash, uint64(block.Height))
-	if err != nil {
-		panic("Failed to submit validator set to enclave")
-	}
-	encryptedRandom := types.EnclaveRandom{Random: random, Proof: proof}
+
+	// todo: Random disabled
+	//random, proof, err := tmenclave.GetRandom(block.DataHash, uint64(block.Height))
+	//if err != nil {
+	//	panic("Failed to submit validator set to enclave")
+	//}
+	//encryptedRandom := types.EnclaveRandom{Random: random, Proof: proof}
 
 	// println("Validating proposal ", block.Height, "with random: ", hex.EncodeToString(random), "proof: ", hex.EncodeToString(proof), "hash: ", hex.EncodeToString(block.DataHash))
-	res := tmenclave.ValidateRandom(random, proof, block.DataHash, uint64(block.Height))
-	if !res {
-		// println("Invalid random generated")
-		panic("Failed to validate generated random")
-	}
-	//
-	//var encRandDecoded tmproto.EncryptedRandom
-	//
-	//err = encRandDecoded.Unmarshal(encryptedRandomEncoded)
-	//if err != nil {
-	//	println("Failed to unmarshal encryptedRandom")
-	//	panic(err)
+	//res := tmenclave.ValidateRandom(random, proof, block.DataHash, uint64(block.Height))
+	//if !res {
+	//	// println("Invalid random generated")
+	//	panic("Failed to validate generated random")
 	//}
-	//
-	//encryptedRandom, err := types.EnclaveRandomFromProto(&encRandDecoded)
-	//if err != nil {
-	//	println("Failed to convert tmproto to type")
-	//	panic(err)
-	//}
-
-	// println("Done getting random from enclave")
 
 	// Fill rest of header with state data.
 	block.Header.Populate(
@@ -309,7 +286,7 @@ func (state State) MakeBlock(
 		timestamp, state.LastBlockID,
 		state.Validators.Hash(), state.NextValidators.Hash(),
 		types.HashConsensusParams(state.ConsensusParams), state.AppHash, state.LastResultsHash,
-		proposerAddress, encryptedRandom,
+		proposerAddress, nil,
 	)
 
 	return block, block.MakePartSet(types.BlockPartSizeBytes)

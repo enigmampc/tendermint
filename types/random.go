@@ -18,6 +18,11 @@ func (enclaveRandom EnclaveRandom) ValidateBasic() error {
 }
 
 func (enclaveRandom *EnclaveRandom) ToProto() *tmproto.EncryptedRandom {
+
+	if enclaveRandom == nil {
+		return nil
+	}
+
 	return &tmproto.EncryptedRandom{
 		Random: enclaveRandom.Random,
 		Proof:  enclaveRandom.Proof,
