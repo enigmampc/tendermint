@@ -367,6 +367,9 @@ func execBlockOnProxyApp(
 		LastCommitInfo:      commitInfo,
 		ByzantineValidators: byzVals,
 		Commit:              commit.ToProto(),
+		Data: &tmproto.Data{
+			Txs: block.Txs.Bytes(),
+		},
 	})
 
 	if err != nil {
