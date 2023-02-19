@@ -327,7 +327,7 @@ func (sw *Switch) StopPeerForError(peer Peer, reason interface{}) {
 		return
 	}
 
-	sw.Logger.Error("Stopping peer for error", "peer", peer, "err", reason)
+	sw.Logger.Debug("Stopping peer for error", "peer", peer, "err", reason)
 	sw.stopAndRemovePeer(peer, reason)
 
 	if peer.IsPersistent() {
@@ -640,7 +640,7 @@ func (sw *Switch) acceptRoutine() {
 					sw.addrBook.AddOurAddress(&addr)
 				}
 
-				sw.Logger.Info(
+				sw.Logger.Debug(
 					"Inbound Peer rejected",
 					"err", err,
 					"numPeers", sw.peers.Size(),
@@ -717,7 +717,7 @@ func (sw *Switch) addOutboundPeerWithConfig(
 	addr *NetAddress,
 	cfg *config.P2PConfig,
 ) error {
-	sw.Logger.Info("Dialing peer", "address", addr)
+	sw.Logger.Debug("Dialing peer", "address", addr)
 
 	// XXX(xla): Remove the leakage of test concerns in implementation.
 	if cfg.TestDialFail {
@@ -843,7 +843,7 @@ func (sw *Switch) addPeer(p Peer) error {
 		reactor.AddPeer(p)
 	}
 
-	sw.Logger.Info("Added peer", "peer", p)
+	sw.Logger.Debug("Added peer", "peer", p)
 
 	return nil
 }
