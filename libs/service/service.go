@@ -173,7 +173,7 @@ func (bs *BaseService) Stop() error {
 			atomic.StoreUint32(&bs.stopped, 0)
 			return ErrNotStarted
 		}
-		bs.Logger.Info("service stop",
+		bs.Logger.Debug("service stop",
 			"msg",
 			log.NewLazySprintf("Stopping %v service", bs.name),
 			"impl",

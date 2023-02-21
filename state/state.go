@@ -9,6 +9,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 
+	tmenclave "github.com/scrtlabs/tm-secret-enclave"
 	tmstate "github.com/tendermint/tendermint/proto/tendermint/state"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	tmversion "github.com/tendermint/tendermint/proto/tendermint/version"
@@ -249,13 +250,41 @@ func (state State) MakeBlock(
 		timestamp = MedianTime(commit, state.LastValidators)
 	}
 
+	// Submit next set of validators to enclave
+	valSetProto, err := state.Validators.ToProto()
+	if err != nil {
+		panic("Failed to convert validator set to protobuf")
+	}
+	valSetBytes, err := valSetProto.Marshal()
+	if err != nil {
+		panic("Failed to marshal validator set")
+	}
+	err = tmenclave.SubmitValidatorSet(valSetBytes, uint64(height))
+	if err != nil {
+		panic("Failed to submit validator set to enclave")
+	}
+
+	// todo: Random disabled
+	//random, proof, err := tmenclave.GetRandom(block.DataHash, uint64(block.Height))
+	//if err != nil {
+	//	panic("Failed to submit validator set to enclave")
+	//}
+	//encryptedRandom := types.EnclaveRandom{Random: random, Proof: proof}
+
+	// println("Validating proposal ", block.Height, "with random: ", hex.EncodeToString(random), "proof: ", hex.EncodeToString(proof), "hash: ", hex.EncodeToString(block.DataHash))
+	//res := tmenclave.ValidateRandom(random, proof, block.DataHash, uint64(block.Height))
+	//if !res {
+	//	// println("Invalid random generated")
+	//	panic("Failed to validate generated random")
+	//}
+
 	// Fill rest of header with state data.
 	block.Header.Populate(
 		state.Version.Consensus, state.ChainID,
 		timestamp, state.LastBlockID,
 		state.Validators.Hash(), state.NextValidators.Hash(),
 		types.HashConsensusParams(state.ConsensusParams), state.AppHash, state.LastResultsHash,
-		proposerAddress,
+		proposerAddress, nil,
 	)
 
 	return block, block.MakePartSet(types.BlockPartSizeBytes)

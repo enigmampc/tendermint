@@ -468,7 +468,9 @@ func (h *Handshaker) replayBlocks(
 			assertAppHashEqualsOneFromBlock(appHash, block)
 		}
 
-		appHash, err = sm.ExecCommitBlock(proxyApp.Consensus(), block, h.logger, h.stateStore, h.genDoc.InitialHeight)
+		commits := h.store.LoadBlockCommit(i)
+
+		appHash, err = sm.ExecCommitBlock(proxyApp.Consensus(), block, h.logger, h.stateStore, h.genDoc.InitialHeight, commits)
 		if err != nil {
 			return nil, err
 		}
@@ -500,7 +502,10 @@ func (h *Handshaker) replayBlock(state sm.State, height int64, proxyApp proxy.Ap
 	blockExec.SetEventBus(h.eventBus)
 
 	var err error
-	state, _, err = blockExec.ApplyBlock(state, meta.BlockID, block)
+
+	commit := h.store.LoadBlockCommit(height)
+
+	state, _, err = blockExec.ApplyBlock(state, meta.BlockID, block, commit)
 	if err != nil {
 		return sm.State{}, err
 	}

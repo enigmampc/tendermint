@@ -58,6 +58,7 @@ there's only a limited number of peers.
 
 NOTE: Assumes that the sum total of voting power does not exceed MaxUInt64.
 */
+
 type VoteSet struct {
 	chainID       string
 	height        int64

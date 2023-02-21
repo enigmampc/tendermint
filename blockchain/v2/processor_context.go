@@ -8,7 +8,7 @@ import (
 )
 
 type processorContext interface {
-	applyBlock(blockID types.BlockID, block *types.Block) error
+	applyBlock(blockID types.BlockID, block *types.Block, commit *types.Commit) error
 	verifyCommit(chainID string, blockID types.BlockID, height int64, commit *types.Commit) error
 	saveBlock(block *types.Block, blockParts *types.PartSet, seenCommit *types.Commit)
 	tmState() state.State
@@ -29,8 +29,8 @@ func newProcessorContext(st blockStore, ex blockApplier, s state.State) *pContex
 	}
 }
 
-func (pc *pContext) applyBlock(blockID types.BlockID, block *types.Block) error {
-	newState, _, err := pc.applier.ApplyBlock(pc.state, blockID, block)
+func (pc *pContext) applyBlock(blockID types.BlockID, block *types.Block, commit *types.Commit) error {
+	newState, _, err := pc.applier.ApplyBlock(pc.state, blockID, block, commit)
 	pc.state = newState
 	return err
 }

@@ -1,8 +1,10 @@
 package state
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
+	tmenclave "github.com/scrtlabs/tm-secret-enclave"
 	"time"
 
 	abci "github.com/tendermint/tendermint/abci/types"
@@ -129,16 +131,32 @@ func (blockExec *BlockExecutor) ValidateBlock(state State, block *types.Block) e
 // from outside this package to process and commit an entire block.
 // It takes a blockID to avoid recomputing the parts hash.
 func (blockExec *BlockExecutor) ApplyBlock(
-	state State, blockID types.BlockID, block *types.Block,
+	state State, blockID types.BlockID, block *types.Block, commit *types.Commit,
 ) (State, int64, error) {
 
 	if err := validateBlock(state, block); err != nil {
 		return state, 0, ErrInvalidBlock(err)
 	}
 
+	// Submit next set of validators to enclave
+	valSetProto, err := state.Validators.ToProto()
+	if err != nil {
+		return state, 0, fmt.Errorf("error in marshaling validator set: %v", err)
+	}
+	valSetBytes, err := valSetProto.Marshal()
+	if err != nil {
+		return state, 0, fmt.Errorf("error in marshaling validator set: %v", err)
+	}
+	err = tmenclave.SubmitValidatorSet(valSetBytes, uint64(block.Height))
+	if err != nil {
+		return state, 0, fmt.Errorf("error submitting validator set to enclave: %v", err)
+	}
+	// todo: change to log level debug later
+	blockExec.logger.Info(fmt.Sprintf("Submitted validator set to enclave for height %d, val set hash: %s", block.Height, hex.EncodeToString(block.ValidatorsHash)))
+
 	startTime := time.Now().UnixNano()
 	abciResponses, err := execBlockOnProxyApp(
-		blockExec.logger, blockExec.proxyApp, block, blockExec.store, state.InitialHeight,
+		blockExec.logger, blockExec.proxyApp, block, blockExec.store, state.InitialHeight, commit,
 	)
 	endTime := time.Now().UnixNano()
 	blockExec.metrics.BlockProcessingTime.Observe(float64(endTime-startTime) / 1000000)
@@ -262,6 +280,7 @@ func execBlockOnProxyApp(
 	block *types.Block,
 	store Store,
 	initialHeight int64,
+	commit *types.Commit,
 ) (*tmstate.ABCIResponses, error) {
 	var validTxs, invalidTxs = 0, 0
 
@@ -304,12 +323,55 @@ func execBlockOnProxyApp(
 		return nil, errors.New("nil header")
 	}
 
+	//vals, err := store.LoadValidators(block.Height)
+	//if err != nil {
+	//	return nil, errors.New("nil validators for height")
+	//}
+
+	//println("New version, hello!")
+	// println("commits exists: ", commits != nil, "precommits exist: ", precommits != nil)
+	// var commitStruct types.Commit
+
+	// if we got the commits for this block
+	//if signatures.Commit != nil {
+	//	commitStruct = *signatures.Commit
+	//} else {
+	//
+	//	blockId, ok := signatures.Precommit.TwoThirdsMajority()
+	//	if !ok {
+	//		panic("Should never get here with a non majority precommit")
+	//	}
+	//
+	//	// if not use the precommits
+	//	var precommitSignatures []types.CommitSig
+	//	for _, vote := range signatures.Precommit.List() {
+	//		precommitSignatures = append(
+	//			precommitSignatures,
+	//			types.NewCommitSigForBlock(vote.Signature, vote.ValidatorAddress, vote.Timestamp),
+	//		)
+	//	}
+	//
+	//	//for signature in precommits.GetByIndex()
+	//	//
+	//	commitStruct = types.Commit{
+	//		Height:     block.Height,
+	//		Round:      signatures.Precommit.GetRound(),
+	//		BlockID:    blockId,
+	//		Signatures: precommitSignatures,
+	//	}
+	//}
+
 	abciResponses.BeginBlock, err = proxyAppConn.BeginBlockSync(abci.RequestBeginBlock{
 		Hash:                block.Hash(),
 		Header:              *pbh,
 		LastCommitInfo:      commitInfo,
 		ByzantineValidators: byzVals,
+		Commit:              commit.ToProto(),
+		Data: &tmproto.Data{
+			Txs: block.Txs.Bytes(),
+		},
 	})
+
 	if err != nil {
 		logger.Error("error in proxyAppConn.BeginBlock", "err", err)
 		return nil, err
@@ -533,8 +595,10 @@ func ExecCommitBlock(
 	logger log.Logger,
 	store Store,
 	initialHeight int64,
+	commit *types.Commit,
 ) ([]byte, error) {
-	_, err := execBlockOnProxyApp(logger, appConnConsensus, block, store, initialHeight)
+
+	_, err := execBlockOnProxyApp(logger, appConnConsensus, block, store, initialHeight, commit)
 	if err != nil {
 		logger.Error("failed executing block on proxy app", "height", block.Height, "err", err)
 		return nil, err

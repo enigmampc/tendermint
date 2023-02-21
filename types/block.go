@@ -348,6 +348,9 @@ type Header struct {
 	// consensus info
 	EvidenceHash    tmbytes.HexBytes `json:"evidence_hash"`    // evidence included in the block
 	ProposerAddress Address          `json:"proposer_address"` // original proposer of the block
+
+	// encrypted Random Source
+	EncryptedRandom *EnclaveRandom `json:"encrypted_random"`
 }
 
 // Populate the Header with state-derived data.
@@ -357,7 +360,7 @@ func (h *Header) Populate(
 	timestamp time.Time, lastBlockID BlockID,
 	valHash, nextValHash []byte,
 	consensusHash, appHash, lastResultsHash []byte,
-	proposerAddress Address,
+	proposerAddress Address, encryptedRandom *EnclaveRandom,
 ) {
 	h.Version = version
 	h.ChainID = chainID
@@ -369,6 +372,7 @@ func (h *Header) Populate(
 	h.AppHash = appHash
 	h.LastResultsHash = lastResultsHash
 	h.ProposerAddress = proposerAddress
+	h.EncryptedRandom = encryptedRandom
 }
 
 // ValidateBasic performs stateless validation on a Header returning an error
@@ -456,7 +460,8 @@ func (h *Header) Hash() tmbytes.HexBytes {
 	if err != nil {
 		return nil
 	}
-	return merkle.HashFromByteSlices([][]byte{
+
+	valuesToHash := [][]byte{
 		hbz,
 		cdcEncode(h.ChainID),
 		cdcEncode(h.Height),
@@ -471,7 +476,13 @@ func (h *Header) Hash() tmbytes.HexBytes {
 		cdcEncode(h.LastResultsHash),
 		cdcEncode(h.EvidenceHash),
 		cdcEncode(h.ProposerAddress),
-	})
+	}
+
+	if h.EncryptedRandom != nil {
+		valuesToHash = append(valuesToHash, cdcEncode(h.EncryptedRandom))
+	}
+
+	return merkle.HashFromByteSlices(valuesToHash)
 }
 
 // StringIndented returns an indented string representation of the header.
@@ -484,6 +495,7 @@ func (h *Header) StringIndented(indent string) string {
 %s  ChainID:        %v
 %s  Height:         %v
 %s  Time:           %v
+%s  EncryptedRandom: %v
 %s  LastBlockID:    %v
 %s  LastCommit:     %v
 %s  Data:           %v
@@ -499,6 +511,7 @@ func (h *Header) StringIndented(indent string) string {
 		indent, h.ChainID,
 		indent, h.Height,
 		indent, h.Time,
+		indent, h.EncryptedRandom,
 		indent, h.LastBlockID,
 		indent, h.LastCommitHash,
 		indent, h.DataHash,
@@ -533,6 +546,7 @@ func (h *Header) ToProto() *tmproto.Header {
 		LastResultsHash:    h.LastResultsHash,
 		LastCommitHash:     h.LastCommitHash,
 		ProposerAddress:    h.ProposerAddress,
+		EncryptedRandom:    h.EncryptedRandom.ToProto(),
 	}
 }
 
@@ -550,6 +564,11 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 		return Header{}, err
 	}
 
+	//encRandom, err := EnclaveRandomFromProto(ph.EncryptedRandom)
+	//if err != nil {
+	//	return Header{}, err
+	//}
+
 	h.Version = ph.Version
 	h.ChainID = ph.ChainID
 	h.Height = ph.Height
@@ -565,6 +584,7 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 	h.LastResultsHash = ph.LastResultsHash
 	h.LastCommitHash = ph.LastCommitHash
 	h.ProposerAddress = ph.ProposerAddress
+	h.EncryptedRandom = nil
 
 	return *h, h.ValidateBasic()
 }
@@ -590,6 +610,25 @@ const (
 	// 1 byte for the flag and 14 bytes for the timestamp
 	MaxCommitSigBytes int64 = 109
 )
+
+// ------------------------------------
+
+type CommitOrPrecommit struct {
+	Commit    *Commit  `json:"commit"`
+	Precommit *VoteSet `json:"precommit"`
+}
+
+func GenericSignatureFromCommit(commit *Commit) CommitOrPrecommit {
+	return CommitOrPrecommit{
+		Commit: commit,
+	}
+}
+
+func GenericSignatureFromPrecommit(precommit *VoteSet) CommitOrPrecommit {
+	return CommitOrPrecommit{
+		Precommit: precommit,
+	}
+}
 
 // CommitSig is a part of the Vote included in a Commit.
 type CommitSig struct {

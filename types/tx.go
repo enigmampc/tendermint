@@ -42,6 +42,15 @@ func (tx Tx) String() string {
 // Txs is a slice of Tx.
 type Txs []Tx
 
+// Bytes returns the raw bytes of the txs
+func (txs Txs) Bytes() [][]byte {
+	txBzs := make([][]byte, len(txs))
+	for i, tx := range txs {
+		txBzs[i] = tx
+	}
+	return txBzs
+}
+
 // Hash returns the Merkle root hash of the transaction hashes.
 // i.e. the leaves of the tree are the hashes of the txs.
 func (txs Txs) Hash() []byte {
