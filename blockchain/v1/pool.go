@@ -82,7 +82,7 @@ func (pool *BlockPool) UpdatePeer(peerID p2p.ID, base int64, height int64) error
 		peer = NewBpPeer(peerID, base, height, pool.toBcR.sendPeerError, nil)
 		peer.SetLogger(pool.logger.With("peer", peerID))
 		pool.peers[peerID] = peer
-		pool.logger.Info("added peer", "peerID", peerID, "base", base, "height", height, "num_peers", len(pool.peers))
+		pool.logger.Debug("added peer", "peerID", peerID, "base", base, "height", height, "num_peers", len(pool.peers))
 	} else {
 		// Check if peer is lowering its height. This is not allowed.
 		if height < peer.Height {
