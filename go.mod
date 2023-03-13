@@ -4,7 +4,7 @@ go 1.18
 
 replace github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
 
-replace github.com/scrtlabs/tm-secret-enclave => github.com/scrtlabs/tm-secret-enclave v1.7.1
+replace github.com/scrtlabs/tm-secret-enclave => github.com/scrtlabs/tm-secret-enclave v1.7.2-0.20230313154812-b08e3ee2ac31
 
 require (
 	github.com/BurntSushi/toml v1.2.1
@@ -34,7 +34,7 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/rs/cors v1.8.2
 	github.com/sasha-s/go-deadlock v0.3.1
-	github.com/scrtlabs/tm-secret-enclave v0.0.0-20230221113259-1bb4b95467c8
+	github.com/scrtlabs/tm-secret-enclave v1.7.2-0.20230313154812-b08e3ee2ac31
 	github.com/snikch/goodman v0.0.0-20171125024755-10e37e294daa
 	github.com/spf13/cobra v1.6.0
 	github.com/spf13/viper v1.13.0
