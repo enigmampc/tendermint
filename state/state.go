@@ -2,6 +2,7 @@ package state
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -264,19 +265,18 @@ func (state State) MakeBlock(
 		panic("Failed to submit validator set to enclave")
 	}
 
-	// todo: Random disabled
-	//random, proof, err := tmenclave.GetRandom(block.DataHash, uint64(block.Height))
-	//if err != nil {
-	//	panic("Failed to submit validator set to enclave")
-	//}
-	//encryptedRandom := types.EnclaveRandom{Random: random, Proof: proof}
+	random, proof, err := tmenclave.GetRandom(state.AppHash, uint64(block.Height))
+	if err != nil {
+		panic("Failed to submit validator set to enclave")
+	}
+	encryptedRandom := types.EnclaveRandom{Random: random, Proof: proof}
 
-	// println("Validating proposal ", block.Height, "with random: ", hex.EncodeToString(random), "proof: ", hex.EncodeToString(proof), "hash: ", hex.EncodeToString(block.DataHash))
-	//res := tmenclave.ValidateRandom(random, proof, block.DataHash, uint64(block.Height))
-	//if !res {
-	//	// println("Invalid random generated")
-	//	panic("Failed to validate generated random")
-	//}
+	println("Validating proposal ", block.Height, "with random: ", hex.EncodeToString(random), "proof: ", hex.EncodeToString(proof), "hash: ", hex.EncodeToString(block.DataHash))
+	res := tmenclave.ValidateRandom(random, proof, state.AppHash, uint64(block.Height))
+	if !res {
+		// println("Invalid random generated")
+		panic("Failed to validate generated random")
+	}
 
 	// Fill rest of header with state data.
 	block.Header.Populate(
@@ -284,7 +284,7 @@ func (state State) MakeBlock(
 		timestamp, state.LastBlockID,
 		state.Validators.Hash(), state.NextValidators.Hash(),
 		types.HashConsensusParams(state.ConsensusParams), state.AppHash, state.LastResultsHash,
-		proposerAddress, nil,
+		proposerAddress, &encryptedRandom,
 	)
 
 	return block, block.MakePartSet(types.BlockPartSizeBytes)

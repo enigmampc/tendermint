@@ -478,9 +478,9 @@ func (h *Header) Hash() tmbytes.HexBytes {
 		cdcEncode(h.ProposerAddress),
 	}
 
-	if h.EncryptedRandom != nil {
-		valuesToHash = append(valuesToHash, cdcEncode(h.EncryptedRandom))
-	}
+	//if h.EncryptedRandom != nil {
+	//	valuesToHash = append(valuesToHash, cdcEncode(h.EncryptedRandom))
+	//}
 
 	return merkle.HashFromByteSlices(valuesToHash)
 }
@@ -564,10 +564,10 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 		return Header{}, err
 	}
 
-	//encRandom, err := EnclaveRandomFromProto(ph.EncryptedRandom)
-	//if err != nil {
-	//	return Header{}, err
-	//}
+	encRandom, err := EnclaveRandomFromProto(ph.EncryptedRandom)
+	if err != nil {
+		return Header{}, err
+	}
 
 	h.Version = ph.Version
 	h.ChainID = ph.ChainID
@@ -584,7 +584,7 @@ func HeaderFromProto(ph *tmproto.Header) (Header, error) {
 	h.LastResultsHash = ph.LastResultsHash
 	h.LastCommitHash = ph.LastCommitHash
 	h.ProposerAddress = ph.ProposerAddress
-	h.EncryptedRandom = nil
+	h.EncryptedRandom = encRandom
 
 	return *h, h.ValidateBasic()
 }
