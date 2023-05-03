@@ -504,6 +504,14 @@ func (h *Handshaker) replayBlock(state sm.State, height int64, proxyApp proxy.Ap
 	var err error
 
 	commit := h.store.LoadBlockCommit(height)
+	if commit == nil {
+		// try using a non-canonical commit
+		commit = h.store.LoadSeenCommit(height)
+
+		if commit == nil {
+			return sm.State{}, fmt.Errorf("error getting commit for height: %d", height)
+		}
+	}
 
 	state, _, err = blockExec.ApplyBlock(state, meta.BlockID, block, commit)
 	if err != nil {
