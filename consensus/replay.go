@@ -3,17 +3,17 @@ package consensus
 import (
 	"bytes"
 	"fmt"
-	"hash/crc32"
-	"io"
-	"reflect"
-	"time"
-
+	tmenclave "github.com/scrtlabs/tm-secret-enclave"
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/crypto/merkle"
 	"github.com/tendermint/tendermint/libs/log"
 	"github.com/tendermint/tendermint/proxy"
 	sm "github.com/tendermint/tendermint/state"
 	"github.com/tendermint/tendermint/types"
+	"hash/crc32"
+	"io"
+	"reflect"
+	"time"
 )
 
 var crc32c = crc32.MakeTable(crc32.Castagnoli)
@@ -469,6 +469,21 @@ func (h *Handshaker) replayBlocks(
 		}
 
 		commits := h.store.LoadBlockCommit(i)
+
+		vals, err := state.Validators.ToProto()
+		if err != nil {
+			return nil, fmt.Errorf("error submitting validator set to enclave: %v", err)
+		}
+
+		valSetBytes, err := vals.Marshal()
+		if err != nil {
+			return nil, fmt.Errorf("error submitting validator set to enclave: %v", err)
+		}
+
+		err = tmenclave.SubmitValidatorSet(valSetBytes, uint64(block.Height))
+		if err != nil {
+			return nil, fmt.Errorf("error submitting validator set to enclave: %v", err)
+		}
 
 		appHash, err = sm.ExecCommitBlock(proxyApp.Consensus(), block, h.logger, h.stateStore, h.genDoc.InitialHeight, commits)
 		if err != nil {
