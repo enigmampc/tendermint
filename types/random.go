@@ -1,7 +1,7 @@
 package types
 
 import (
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	ctmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 )
 
 type EnclaveRandom struct {
@@ -17,13 +17,13 @@ func (enclaveRandom EnclaveRandom) ValidateBasic() error {
 	return nil
 }
 
-func (enclaveRandom *EnclaveRandom) ToProto() *tmproto.EncryptedRandom {
+func (enclaveRandom *EnclaveRandom) ToProto() *ctmproto.EncryptedRandom {
 
 	if enclaveRandom == nil {
 		return nil
 	}
 
-	return &tmproto.EncryptedRandom{
+	return &ctmproto.EncryptedRandom{
 		Random: enclaveRandom.Random,
 		Proof:  enclaveRandom.Proof,
 	}
@@ -31,7 +31,7 @@ func (enclaveRandom *EnclaveRandom) ToProto() *tmproto.EncryptedRandom {
 
 // FromProto sets a protobuf BlockID to the given pointer.
 // It returns an error if the block id is invalid.
-func EnclaveRandomFromProto(encRand *tmproto.EncryptedRandom) (*EnclaveRandom, error) {
+func EnclaveRandomFromProto(encRand *ctmproto.EncryptedRandom) (*EnclaveRandom, error) {
 	if encRand == nil {
 		return nil, nil
 	}

@@ -367,7 +367,7 @@ func execBlockOnProxyApp(
 		LastCommitInfo:      commitInfo,
 		ByzantineValidators: byzVals,
 		Commit:              commit.ToProto(),
-		Data: &tmproto.Data{
+		Data: &cmtproto.Data{
 			Txs: block.Txs.Bytes(),
 		},
 	})
@@ -597,7 +597,6 @@ func ExecCommitBlock(
 	initialHeight int64,
 	commit *types.Commit,
 ) ([]byte, error) {
-
 	_, err := execBlockOnProxyApp(logger, appConnConsensus, block, store, initialHeight, commit)
 	if err != nil {
 		logger.Error("failed executing block on proxy app", "height", block.Height, "err", err)
