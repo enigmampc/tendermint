@@ -6,6 +6,7 @@ import (
 	"fmt"
 	mrand "math/rand"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -22,7 +23,7 @@ import (
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/libs/log"
-	tmrand "github.com/tendermint/tendermint/libs/rand"
+	cmtrand "github.com/tendermint/tendermint/libs/rand"
 	"github.com/tendermint/tendermint/libs/service"
 	"github.com/tendermint/tendermint/mempool"
 	"github.com/tendermint/tendermint/proxy"
@@ -527,7 +528,7 @@ func TestMempool_CheckTxChecksTxSize(t *testing.T) {
 	for i, testCase := range testCases {
 		caseString := fmt.Sprintf("case %d, len %d", i, testCase.len)
 
-		tx := tmrand.Bytes(testCase.len)
+		tx := cmtrand.Bytes(testCase.len)
 
 		err := mempl.CheckTx(tx, nil, mempool.TxInfo{})
 		bv := gogotypes.BytesValue{Value: tx}
@@ -638,12 +639,57 @@ func TestMempoolTxsBytes(t *testing.T) {
 
 }
 
+func TestMempoolNoCacheOverflow(t *testing.T) {
+	sockPath := fmt.Sprintf("unix:///tmp/echo_%v.sock", cmtrand.Str(6))
+	app := kvstore.NewApplication()
+	_, server := newRemoteApp(t, sockPath, app)
+	t.Cleanup(func() {
+		if err := server.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	cfg := config.ResetTestRoot("mempool_test")
+	mp, cleanup := newMempoolWithAppAndConfig(proxy.NewRemoteClientCreator(sockPath, "socket", true), cfg)
+	defer cleanup()
+
+	// add tx0
+	var tx0 = types.Tx([]byte{0x01})
+	err := mp.CheckTx(tx0, nil, mempool.TxInfo{})
+	require.NoError(t, err)
+	err = mp.FlushAppConn()
+	require.NoError(t, err)
+
+	// saturate the cache to remove tx0
+	for i := 1; i <= mp.config.CacheSize; i++ {
+		err = mp.CheckTx(types.Tx([]byte(strconv.Itoa(i))), nil, mempool.TxInfo{})
+		require.NoError(t, err)
+	}
+	err = mp.FlushAppConn()
+	require.NoError(t, err)
+	assert.False(t, mp.cache.Has(types.Tx([]byte{0x01})))
+
+	// add again tx0
+	err = mp.CheckTx(tx0, nil, mempool.TxInfo{})
+	require.NoError(t, err)
+	err = mp.FlushAppConn()
+	require.NoError(t, err)
+
+	// tx0 should appear only once in mp.txs
+	found := 0
+	for e := mp.txs.Front(); e != nil; e = e.Next() {
+		if types.Tx.Key(e.Value.(*mempoolTx).tx) == types.Tx.Key(tx0) {
+			found++
+		}
+	}
+	assert.True(t, found == 1)
+}
+
 // This will non-deterministically catch some concurrency failures like
 // https://github.com/tendermint/tendermint/issues/3509
 // TODO: all of the tests should probably also run using the remote proxy app
 // since otherwise we're not actually testing the concurrency of the mempool here!
 func TestMempoolRemoteAppConcurrency(t *testing.T) {
-	sockPath := fmt.Sprintf("unix:///tmp/echo_%v.sock", tmrand.Str(6))
+	sockPath := fmt.Sprintf("unix:///tmp/echo_%v.sock", cmtrand.Str(6))
 	app := kvstore.NewApplication()
 	_, server := newRemoteApp(t, sockPath, app)
 	t.Cleanup(func() {
@@ -662,7 +708,7 @@ func TestMempoolRemoteAppConcurrency(t *testing.T) {
 	txLen := 200
 	txs := make([]types.Tx, nTxs)
 	for i := 0; i < nTxs; i++ {
-		txs[i] = tmrand.Bytes(txLen)
+		txs[i] = cmtrand.Bytes(txLen)
 	}
 
 	// simulate a group of peers sending them over and over

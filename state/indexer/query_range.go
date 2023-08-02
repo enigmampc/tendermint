@@ -1,9 +1,11 @@
 package indexer
 
 import (
+	"math/big"
 	"time"
 
 	"github.com/tendermint/tendermint/libs/pubsub/query"
+	"github.com/tendermint/tendermint/types"
 )
 
 // QueryRanges defines a mapping between a composite event key and a QueryRange.
@@ -43,6 +45,9 @@ func (qr QueryRange) LowerBoundValue() interface{} {
 	switch t := qr.LowerBound.(type) {
 	case int64:
 		return t + 1
+	case *big.Int:
+		tmp := new(big.Int)
+		return tmp.Add(t, big.NewInt(1))
 
 	case time.Time:
 		return t.Unix() + 1
@@ -66,7 +71,9 @@ func (qr QueryRange) UpperBoundValue() interface{} {
 	switch t := qr.UpperBound.(type) {
 	case int64:
 		return t - 1
-
+	case *big.Int:
+		tmp := new(big.Int)
+		return tmp.Sub(t, big.NewInt(1))
 	case time.Time:
 		return t.Unix() - 1
 
@@ -75,8 +82,65 @@ func (qr QueryRange) UpperBoundValue() interface{} {
 	}
 }
 
+// LookForRangesWithHeight returns a mapping of QueryRanges and the matching indexes in
+// the provided query conditions. If we are matching attributes within events
+// we need to remember the height range from the condition
+func LookForRangesWithHeight(conditions []query.Condition) (ranges QueryRanges, indexes []int, heightRange QueryRange) {
+	ranges = make(QueryRanges)
+	for i, c := range conditions {
+		heightKey := false
+		if IsRangeOperation(c.Op) {
+			r, ok := ranges[c.CompositeKey]
+			if !ok {
+				r = QueryRange{Key: c.CompositeKey}
+				if c.CompositeKey == types.BlockHeightKey || c.CompositeKey == types.TxHeightKey {
+					heightRange = QueryRange{Key: c.CompositeKey}
+					heightKey = true
+				}
+			}
+
+			switch c.Op {
+			case query.OpGreater:
+				if heightKey {
+					heightRange.LowerBound = c.Operand
+				}
+				r.LowerBound = c.Operand
+
+			case query.OpGreaterEqual:
+				r.IncludeLowerBound = true
+				r.LowerBound = c.Operand
+				if heightKey {
+					heightRange.IncludeLowerBound = true
+					heightRange.LowerBound = c.Operand
+				}
+
+			case query.OpLess:
+				r.UpperBound = c.Operand
+				if heightKey {
+					heightRange.UpperBound = c.Operand
+				}
+
+			case query.OpLessEqual:
+				r.IncludeUpperBound = true
+				r.UpperBound = c.Operand
+				if heightKey {
+					heightRange.IncludeUpperBound = true
+					heightRange.UpperBound = c.Operand
+				}
+			}
+
+			ranges[c.CompositeKey] = r
+			indexes = append(indexes, i)
+		}
+	}
+
+	return ranges, indexes, heightRange
+}
+
 // LookForRanges returns a mapping of QueryRanges and the matching indexes in
 // the provided query conditions.
+//
+// Deprecated: This function will be replaced with LookForRangesWithHeight
 func LookForRanges(conditions []query.Condition) (ranges QueryRanges, indexes []int) {
 	ranges = make(QueryRanges)
 	for i, c := range conditions {
