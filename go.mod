@@ -2,7 +2,7 @@ module github.com/tendermint/tendermint
 
 go 1.19
 
-replace github.com/scrtlabs/tm-secret-enclave => github.com/scrtlabs/tm-secret-enclave v1.7.2-0.20230313154812-b08e3ee2ac31
+replace github.com/scrtlabs/tm-secret-enclave => github.com/scrtlabs/tm-secret-enclave v1.9.6
 
 require (
 	github.com/BurntSushi/toml v1.2.1
