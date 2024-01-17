@@ -1,5 +1,5 @@
 # CometBFT
-
+----------------------------------------------------------------
 [Byzantine-Fault Tolerant][bft] [State Machine Replication][smr]. Or
 [Blockchain], for short.
 
