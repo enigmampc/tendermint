@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,9 +15,9 @@ import (
 	"github.com/tendermint/tendermint/abci/server"
 	"github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/crypto/ed25519"
-	cmtflags "github.com/tendermint/tendermint/libs/cli/flags"
+	tmflags "github.com/tendermint/tendermint/libs/cli/flags"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtnet "github.com/tendermint/tendermint/libs/net"
+	tmnet "github.com/tendermint/tendermint/libs/net"
 	"github.com/tendermint/tendermint/light"
 	lproxy "github.com/tendermint/tendermint/light/proxy"
 	lrpc "github.com/tendermint/tendermint/light/rpc"
@@ -30,8 +29,6 @@ import (
 	rpcserver "github.com/tendermint/tendermint/rpc/jsonrpc/server"
 	"github.com/tendermint/tendermint/test/e2e/app"
 	e2e "github.com/tendermint/tendermint/test/e2e/pkg"
-	mcs "github.com/tendermint/tendermint/test/maverick/consensus"
-	maverick "github.com/tendermint/tendermint/test/maverick/node"
 )
 
 var logger = log.NewTMLogger(log.NewSyncWriter(os.Stdout))
@@ -65,7 +62,7 @@ func run(configFile string) error {
 		if err = startSigner(cfg); err != nil {
 			return err
 		}
-		if cfg.Protocol == "builtin" {
+		if cfg.Protocol == "builtin" || cfg.Protocol == "builtin_unsync" {
 			time.Sleep(1 * time.Second)
 		}
 	}
@@ -74,15 +71,11 @@ func run(configFile string) error {
 	switch cfg.Protocol {
 	case "socket", "grpc":
 		err = startApp(cfg)
-	case "builtin":
-		if len(cfg.Misbehaviors) == 0 {
-			if cfg.Mode == string(e2e.ModeLight) {
-				err = startLightClient(cfg)
-			} else {
-				err = startNode(cfg)
-			}
+	case "builtin", "builtin_unsync":
+		if cfg.Mode == string(e2e.ModeLight) {
+			err = startLightClient(cfg)
 		} else {
-			err = startMaverick(cfg)
+			err = startNode(cfg)
 		}
 	default:
 		err = fmt.Errorf("invalid protocol %q", cfg.Protocol)
@@ -97,7 +90,7 @@ func run(configFile string) error {
 	}
 }
 
-// startApp starts the application server, listening for connections from CometBFT.
+// startApp starts the application server, listening for connections from Tendermint.
 func startApp(cfg *Config) error {
 	app, err := app.NewApplication(cfg.App())
 	if err != nil {
@@ -115,8 +108,8 @@ func startApp(cfg *Config) error {
 	return nil
 }
 
-// startNode starts a CometBFT node running the application directly. It assumes the CometBFT
-// configuration is in $CMTHOME/config/cometbft.toml.
+// startNode starts a Tendermint node running the application directly. It assumes the Tendermint
+// configuration is in $TMHOME/config/tendermint.toml.
 //
 // FIXME There is no way to simply load the configuration from a file, so we need to pull in Viper.
 func startNode(cfg *Config) error {
@@ -125,18 +118,27 @@ func startNode(cfg *Config) error {
 		return err
 	}
 
-	cmtcfg, nodeLogger, nodeKey, err := setupNode()
+	tmcfg, nodeLogger, nodeKey, err := setupNode()
 	if err != nil {
 		return fmt.Errorf("failed to setup config: %w", err)
 	}
 
-	n, err := node.NewNode(cmtcfg,
-		privval.LoadOrGenFilePV(cmtcfg.PrivValidatorKeyFile(), cmtcfg.PrivValidatorStateFile()),
+	var clientCreator proxy.ClientCreator
+	if cfg.Protocol == string(e2e.ProtocolBuiltinUnsync) {
+		clientCreator = proxy.NewUnsyncLocalClientCreator(app)
+		nodeLogger.Info("Using unsynchronized local client creator")
+	} else {
+		clientCreator = proxy.NewLocalClientCreator(app)
+		nodeLogger.Info("Using default (synchronized) local client creator")
+	}
+
+	n, err := node.NewNode(tmcfg,
+		privval.LoadOrGenFilePV(tmcfg.PrivValidatorKeyFile(), tmcfg.PrivValidatorStateFile()),
 		nodeKey,
-		proxy.NewLocalClientCreator(app),
-		node.DefaultGenesisDocProviderFunc(cmtcfg),
-		node.DefaultDBProvider,
-		node.DefaultMetricsProvider(cmtcfg.Instrumentation),
+		clientCreator,
+		node.DefaultGenesisDocProviderFunc(tmcfg),
+		config.DefaultDBProvider,
+		node.DefaultMetricsProvider(tmcfg.Instrumentation),
 		nodeLogger,
 	)
 	if err != nil {
@@ -146,26 +148,26 @@ func startNode(cfg *Config) error {
 }
 
 func startLightClient(cfg *Config) error {
-	cmtcfg, nodeLogger, _, err := setupNode()
+	tmcfg, nodeLogger, _, err := setupNode()
 	if err != nil {
 		return err
 	}
 
-	dbContext := &node.DBContext{ID: "light", Config: cmtcfg}
-	lightDB, err := node.DefaultDBProvider(dbContext)
+	dbContext := &config.DBContext{ID: "light", Config: tmcfg}
+	lightDB, err := config.DefaultDBProvider(dbContext)
 	if err != nil {
 		return err
 	}
 
-	providers := rpcEndpoints(cmtcfg.P2P.PersistentPeers)
+	providers := rpcEndpoints(tmcfg.P2P.PersistentPeers)
 
 	c, err := light.NewHTTPClient(
 		context.Background(),
 		cfg.ChainID,
 		light.TrustOptions{
-			Period: cmtcfg.StateSync.TrustPeriod,
-			Height: cmtcfg.StateSync.TrustHeight,
-			Hash:   cmtcfg.StateSync.TrustHashBytes(),
+			Period: tmcfg.StateSync.TrustPeriod,
+			Height: tmcfg.StateSync.TrustHeight,
+			Hash:   tmcfg.StateSync.TrustHashBytes(),
 		},
 		providers[0],
 		providers[1:],
@@ -177,23 +179,23 @@ func startLightClient(cfg *Config) error {
 	}
 
 	rpccfg := rpcserver.DefaultConfig()
-	rpccfg.MaxBodyBytes = cmtcfg.RPC.MaxBodyBytes
-	rpccfg.MaxHeaderBytes = cmtcfg.RPC.MaxHeaderBytes
-	rpccfg.MaxOpenConnections = cmtcfg.RPC.MaxOpenConnections
+	rpccfg.MaxBodyBytes = tmcfg.RPC.MaxBodyBytes
+	rpccfg.MaxHeaderBytes = tmcfg.RPC.MaxHeaderBytes
+	rpccfg.MaxOpenConnections = tmcfg.RPC.MaxOpenConnections
 	// If necessary adjust global WriteTimeout to ensure it's greater than
 	// TimeoutBroadcastTxCommit.
 	// See https://github.com/tendermint/tendermint/issues/3435
-	if rpccfg.WriteTimeout <= cmtcfg.RPC.TimeoutBroadcastTxCommit {
-		rpccfg.WriteTimeout = cmtcfg.RPC.TimeoutBroadcastTxCommit + 1*time.Second
+	if rpccfg.WriteTimeout <= tmcfg.RPC.TimeoutBroadcastTxCommit {
+		rpccfg.WriteTimeout = tmcfg.RPC.TimeoutBroadcastTxCommit + 1*time.Second
 	}
 
-	p, err := lproxy.NewProxy(c, cmtcfg.RPC.ListenAddress, providers[0], rpccfg, nodeLogger,
+	p, err := lproxy.NewProxy(c, tmcfg.RPC.ListenAddress, providers[0], rpccfg, nodeLogger,
 		lrpc.KeyPathFn(lrpc.DefaultMerkleKeyPathFn()))
 	if err != nil {
 		return err
 	}
 
-	logger.Info("Starting proxy...", "laddr", cmtcfg.RPC.ListenAddress)
+	logger.Info("Starting proxy...", "laddr", tmcfg.RPC.ListenAddress)
 	if err := p.ListenAndServe(); err != http.ErrServerClosed {
 		// Error starting or closing listener:
 		logger.Error("proxy ListenAndServe", "err", err)
@@ -202,48 +204,11 @@ func startLightClient(cfg *Config) error {
 	return nil
 }
 
-// FIXME: Temporarily disconnected maverick until it is redesigned
-// startMaverick starts a Maverick node that runs the application directly. It assumes the CometBFT
-// configuration is in $CMTHOME/config/cometbft.toml.
-func startMaverick(cfg *Config) error {
-	app, err := app.NewApplication(cfg.App())
-	if err != nil {
-		return err
-	}
-
-	cmtcfg, logger, nodeKey, err := setupNode()
-	if err != nil {
-		return fmt.Errorf("failed to setup config: %w", err)
-	}
-
-	misbehaviors := make(map[int64]mcs.Misbehavior, len(cfg.Misbehaviors))
-	for heightString, misbehaviorString := range cfg.Misbehaviors {
-		height, _ := strconv.ParseInt(heightString, 10, 64)
-		misbehaviors[height] = mcs.MisbehaviorList[misbehaviorString]
-	}
-
-	n, err := maverick.NewNode(cmtcfg,
-		maverick.LoadOrGenFilePV(cmtcfg.PrivValidatorKeyFile(), cmtcfg.PrivValidatorStateFile()),
-		nodeKey,
-		proxy.NewLocalClientCreator(app),
-		maverick.DefaultGenesisDocProviderFunc(cmtcfg),
-		maverick.DefaultDBProvider,
-		maverick.DefaultMetricsProvider(cmtcfg.Instrumentation),
-		logger,
-		misbehaviors,
-	)
-	if err != nil {
-		return err
-	}
-
-	return n.Start()
-}
-
 // startSigner starts a signer server connecting to the given endpoint.
 func startSigner(cfg *Config) error {
 	filePV := privval.LoadFilePV(cfg.PrivValKey, cfg.PrivValState)
 
-	protocol, address := cmtnet.ProtocolAndAddress(cfg.PrivValServer)
+	protocol, address := tmnet.ProtocolAndAddress(cfg.PrivValServer)
 	var dialFn privval.SocketDialer
 	switch protocol {
 	case "tcp":
@@ -266,11 +231,11 @@ func startSigner(cfg *Config) error {
 }
 
 func setupNode() (*config.Config, log.Logger, *p2p.NodeKey, error) {
-	var cmtcfg *config.Config
+	var tmcfg *config.Config
 
-	home := os.Getenv("CMTHOME")
+	home := os.Getenv("TMHOME")
 	if home == "" {
-		return nil, nil, nil, errors.New("CMTHOME not set")
+		return nil, nil, nil, errors.New("TMHOME not set")
 	}
 
 	viper.AddConfigPath(filepath.Join(home, "config"))
@@ -280,35 +245,35 @@ func setupNode() (*config.Config, log.Logger, *p2p.NodeKey, error) {
 		return nil, nil, nil, err
 	}
 
-	cmtcfg = config.DefaultConfig()
+	tmcfg = config.DefaultConfig()
 
-	if err := viper.Unmarshal(cmtcfg); err != nil {
+	if err := viper.Unmarshal(tmcfg); err != nil {
 		return nil, nil, nil, err
 	}
 
-	cmtcfg.SetRoot(home)
+	tmcfg.SetRoot(home)
 
-	if err := cmtcfg.ValidateBasic(); err != nil {
+	if err := tmcfg.ValidateBasic(); err != nil {
 		return nil, nil, nil, fmt.Errorf("error in config file: %w", err)
 	}
 
-	if cmtcfg.LogFormat == config.LogFormatJSON {
+	if tmcfg.LogFormat == config.LogFormatJSON {
 		logger = log.NewTMJSONLogger(log.NewSyncWriter(os.Stdout))
 	}
 
-	nodeLogger, err := cmtflags.ParseLogLevel(cmtcfg.LogLevel, logger, config.DefaultLogLevel)
+	nodeLogger, err := tmflags.ParseLogLevel(tmcfg.LogLevel, logger, config.DefaultLogLevel)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	nodeLogger = nodeLogger.With("module", "main")
 
-	nodeKey, err := p2p.LoadOrGenNodeKey(cmtcfg.NodeKeyFile())
+	nodeKey, err := p2p.LoadOrGenNodeKey(tmcfg.NodeKeyFile())
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to load or gen node key %s: %w", cmtcfg.NodeKeyFile(), err)
+		return nil, nil, nil, fmt.Errorf("failed to load or gen node key %s: %w", tmcfg.NodeKeyFile(), err)
 	}
 
-	return cmtcfg, nodeLogger, nodeKey, nil
+	return tmcfg, nodeLogger, nodeKey, nil
 }
 
 // rpcEndpoints takes a list of persistent peers and splits them into a list of rpc endpoints

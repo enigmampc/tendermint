@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -14,9 +16,9 @@ import (
 	"github.com/tendermint/tendermint/test/e2e/pkg/infra/docker"
 )
 
-var (
-	logger = log.NewTMLogger(log.NewSyncWriter(os.Stdout))
-)
+const randomSeed = 2308084734268
+
+var logger = log.NewTMLogger(log.NewSyncWriter(os.Stdout))
 
 func main() {
 	NewCLI().Run()
@@ -97,6 +99,8 @@ func NewCLI() *CLI {
 				return err
 			}
 
+			r := rand.New(rand.NewSource(randomSeed)) //nolint: gosec
+
 			chLoadResult := make(chan error)
 			ctx, loadCancel := context.WithCancel(context.Background())
 			defer loadCancel()
@@ -112,14 +116,6 @@ func NewCLI() *CLI {
 				return err
 			}
 
-			if lastMisbehavior := cli.testnet.LastMisbehaviorHeight(); lastMisbehavior > 0 {
-				// wait for misbehaviors before starting perturbations. We do a separate
-				// wait for another 5 blocks, since the last misbehavior height may be
-				// in the past depending on network startup ordering.
-				if err := WaitUntil(cli.testnet, lastMisbehavior); err != nil {
-					return err
-				}
-			}
 			if err := Wait(cli.testnet, 5); err != nil { // allow some txs to go through
 				return err
 			}
@@ -129,6 +125,15 @@ func NewCLI() *CLI {
 					return err
 				}
 				if err := Wait(cli.testnet, 5); err != nil { // allow some txs to go through
+					return err
+				}
+			}
+
+			if cli.testnet.Evidence > 0 {
+				if err := InjectEvidence(ctx, r, cli.testnet, cli.testnet.Evidence); err != nil {
+					return err
+				}
+				if err := Wait(cli.testnet, 5); err != nil { // ensure chain progress
 					return err
 				}
 			}
@@ -215,6 +220,29 @@ func NewCLI() *CLI {
 		Short: "Generates transaction load until the command is canceled",
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			return Load(context.Background(), cli.testnet)
+		},
+	})
+
+	cli.root.AddCommand(&cobra.Command{
+		Use:   "evidence [amount]",
+		Args:  cobra.MaximumNArgs(1),
+		Short: "Generates and broadcasts evidence to a random node",
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
+			amount := 1
+
+			if len(args) == 1 {
+				amount, err = strconv.Atoi(args[0])
+				if err != nil {
+					return err
+				}
+			}
+
+			return InjectEvidence(
+				cmd.Context(),
+				rand.New(rand.NewSource(randomSeed)), //nolint: gosec
+				cli.testnet,
+				amount,
+			)
 		},
 	})
 

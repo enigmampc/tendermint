@@ -2,27 +2,23 @@ package types
 
 import (
 	"bytes"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
 	ctest "github.com/tendermint/tendermint/libs/test"
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 )
 
 func makeTxs(cnt, size int) Txs {
 	txs := make(Txs, cnt)
 	for i := 0; i < cnt; i++ {
-		txs[i] = cmtrand.Bytes(size)
+		txs[i] = tmrand.Bytes(size)
 	}
 	return txs
-}
-
-func randInt(low, high int) int {
-	off := cmtrand.Int() % (high - low)
-	return low + off
 }
 
 func TestTxIndex(t *testing.T) {
@@ -81,7 +77,7 @@ func TestValidTxProof(t *testing.T) {
 			// read-write must also work
 			var (
 				p2  TxProof
-				pb2 cmtproto.TxProof
+				pb2 tmproto.TxProof
 			)
 			pbProof := proof.ToProto()
 			bin, err := pbProof.Marshal()
@@ -132,7 +128,7 @@ func assertBadProof(t *testing.T, root []byte, bad []byte, good TxProof) {
 
 	var (
 		proof   TxProof
-		pbProof cmtproto.TxProof
+		pbProof tmproto.TxProof
 	)
 	err := pbProof.Unmarshal(bad)
 	if err == nil {
@@ -148,4 +144,8 @@ func assertBadProof(t *testing.T, root []byte, bad []byte, good TxProof) {
 			}
 		}
 	}
+}
+
+func randInt(low, high int) int {
+	return rand.Intn(high-low) + low
 }

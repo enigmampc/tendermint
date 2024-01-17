@@ -6,11 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
-
 	"github.com/tendermint/tendermint/libs/cmap"
-	cmtmath "github.com/tendermint/tendermint/libs/math"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
+	tmmath "github.com/tendermint/tendermint/libs/math"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
 	"github.com/tendermint/tendermint/libs/service"
 	"github.com/tendermint/tendermint/p2p"
 	"github.com/tendermint/tendermint/p2p/conn"
@@ -237,7 +235,7 @@ func (r *Reactor) logErrAddrBook(err error) {
 }
 
 // Receive implements Reactor by handling incoming PEX messages.
-func (r *Reactor) ReceiveEnvelope(e p2p.Envelope) {
+func (r *Reactor) Receive(e p2p.Envelope) {
 	r.Logger.Debug("Received message", "src", e.Src, "chId", e.ChannelID, "msg", e.Message)
 
 	switch msg := e.Message.(type) {
@@ -300,23 +298,6 @@ func (r *Reactor) ReceiveEnvelope(e p2p.Envelope) {
 	}
 }
 
-func (r *Reactor) Receive(chID byte, peer p2p.Peer, msgBytes []byte) {
-	msg := &tmp2p.Message{}
-	err := proto.Unmarshal(msgBytes, msg)
-	if err != nil {
-		panic(err)
-	}
-	um, err := msg.Unwrap()
-	if err != nil {
-		panic(err)
-	}
-	r.ReceiveEnvelope(p2p.Envelope{
-		ChannelID: chID,
-		Src:       peer,
-		Message:   um,
-	})
-}
-
 // enforces a minimum amount of time between requests
 func (r *Reactor) receiveRequest(src Peer) error {
 	id := string(src.ID())
@@ -360,10 +341,10 @@ func (r *Reactor) RequestAddrs(p Peer) {
 	}
 	r.Logger.Debug("Request addrs", "from", p)
 	r.requestsSent.Set(id, struct{}{})
-	p2p.SendEnvelopeShim(p, p2p.Envelope{ //nolint: staticcheck
+	p.Send(p2p.Envelope{
 		ChannelID: PexChannel,
 		Message:   &tmp2p.PexRequest{},
-	}, r.Logger)
+	})
 }
 
 // ReceiveAddrs adds the given addrs to the addrbook if theres an open
@@ -425,7 +406,7 @@ func (r *Reactor) SendAddrs(p Peer, netAddrs []*p2p.NetAddress) {
 		ChannelID: PexChannel,
 		Message:   &tmp2p.PexAddrs{Addrs: p2p.NetAddressesToProto(netAddrs)},
 	}
-	p2p.SendEnvelopeShim(p, e, r.Logger) //nolint: staticcheck
+	p.Send(e)
 }
 
 // SetEnsurePeersPeriod sets period to ensure peers connected.
@@ -436,7 +417,7 @@ func (r *Reactor) SetEnsurePeersPeriod(d time.Duration) {
 // Ensures that sufficient peers are connected. (continuous)
 func (r *Reactor) ensurePeersRoutine() {
 	var (
-		seed   = cmtrand.NewRand()
+		seed   = tmrand.NewRand()
 		jitter = seed.Int63n(r.ensurePeersPeriod.Nanoseconds())
 	)
 
@@ -489,7 +470,7 @@ func (r *Reactor) ensurePeers() {
 	// bias to prefer more vetted peers when we have fewer connections.
 	// not perfect, but somewhate ensures that we prioritize connecting to more-vetted
 	// NOTE: range here is [10, 90]. Too high ?
-	newBias := cmtmath.MinInt(out, 8)*10 + 10
+	newBias := tmmath.MinInt(out, 8)*10 + 10
 
 	toDial := make(map[p2p.ID]*p2p.NetAddress)
 	// Try maxAttempts times to pick numToDial addresses to dial
@@ -508,7 +489,7 @@ func (r *Reactor) ensurePeers() {
 		}
 		// TODO: consider moving some checks from toDial into here
 		// so we don't even consider dialing peers that we want to wait
-		// before dialling again, or have dialed too many times already
+		// before dialing again, or have dialed too many times already
 		toDial[try.ID] = try
 	}
 
@@ -538,8 +519,8 @@ func (r *Reactor) ensurePeers() {
 		peers := r.Switch.Peers().List()
 		peersCount := len(peers)
 		if peersCount > 0 {
-			peer := peers[cmtrand.Int()%peersCount]
-			r.Logger.Debug("We need more addresses. Sending pexRequest to random peer", "peer", peer)
+			peer := peers[tmrand.Int()%peersCount]
+			r.Logger.Info("We need more addresses. Sending pexRequest to random peer", "peer", peer)
 			r.RequestAddrs(peer)
 		}
 
@@ -571,7 +552,7 @@ func (r *Reactor) dialPeer(addr *p2p.NetAddress) error {
 
 	// exponential backoff if it's not our first attempt to dial given address
 	if attempts > 0 {
-		jitter := time.Duration(cmtrand.Float64() * float64(time.Second)) // 1s == (1e9 ns)
+		jitter := time.Duration(tmrand.Float64() * float64(time.Second)) // 1s == (1e9 ns)
 		backoffDuration := jitter + ((1 << uint(attempts)) * time.Second)
 		backoffDuration = r.maxBackoffDurationForPeer(addr, backoffDuration)
 		sinceLastDialed := time.Since(lastDialed)
@@ -637,7 +618,7 @@ func (r *Reactor) checkSeeds() (numOnline int, netAddrs []*p2p.NetAddress, err e
 
 // randomly dial seeds until we connect to one or exhaust them
 func (r *Reactor) dialSeeds() {
-	perm := cmtrand.Perm(len(r.seedAddrs))
+	perm := tmrand.Perm(len(r.seedAddrs))
 	// perm := r.Switch.rng.Perm(lSeeds)
 	for _, i := range perm {
 		// dial a random seed

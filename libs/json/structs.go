@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 )
 
 var (
@@ -16,7 +16,7 @@ var (
 
 // structCache is a cache of struct info.
 type structInfoCache struct {
-	cmtsync.RWMutex
+	tmsync.RWMutex
 	structInfos map[reflect.Type]*structInfo
 }
 

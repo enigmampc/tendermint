@@ -8,13 +8,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	dbm "github.com/cometbft/cometbft-db"
-	"github.com/gogo/protobuf/proto"
-	gogotypes "github.com/gogo/protobuf/types"
+	"github.com/cosmos/gogoproto/proto"
+	gogotypes "github.com/cosmos/gogoproto/types"
+	dbm "github.com/tendermint/tm-db"
 
 	clist "github.com/tendermint/tendermint/libs/clist"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	sm "github.com/tendermint/tendermint/state"
 	"github.com/tendermint/tendermint/types"
 )
@@ -362,7 +362,7 @@ func (evpool *Pool) listEvidence(prefixKey byte, maxBytes int64) ([]types.Eviden
 		evSize    int64
 		totalSize int64
 		evidence  []types.Evidence
-		evList    cmtproto.EvidenceList // used for calculating the bytes size
+		evList    tmproto.EvidenceList // used for calculating the bytes size
 	)
 
 	iter, err := dbm.IteratePrefix(evpool.evidenceStore, []byte{prefixKey})
@@ -371,7 +371,7 @@ func (evpool *Pool) listEvidence(prefixKey byte, maxBytes int64) ([]types.Eviden
 	}
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
-		var evpb cmtproto.Evidence
+		var evpb tmproto.Evidence
 		err := evpb.Unmarshal(iter.Value())
 		if err != nil {
 			return evidence, totalSize, err
@@ -463,10 +463,13 @@ func (evpool *Pool) processConsensusBuffer(state sm.State) {
 
 		// Check the height of the conflicting votes and fetch the corresponding time and validator set
 		// to produce the valid evidence
-		var dve *types.DuplicateVoteEvidence
+		var (
+			dve *types.DuplicateVoteEvidence
+			err error
+		)
 		switch {
 		case voteSet.VoteA.Height == state.LastBlockHeight:
-			dve = types.NewDuplicateVoteEvidence(
+			dve, err = types.NewDuplicateVoteEvidence(
 				voteSet.VoteA,
 				voteSet.VoteB,
 				state.LastBlockTime,
@@ -474,7 +477,8 @@ func (evpool *Pool) processConsensusBuffer(state sm.State) {
 			)
 
 		case voteSet.VoteA.Height < state.LastBlockHeight:
-			valSet, err := evpool.stateDB.LoadValidators(voteSet.VoteA.Height)
+			var valSet *types.ValidatorSet
+			valSet, err = evpool.stateDB.LoadValidators(voteSet.VoteA.Height)
 			if err != nil {
 				evpool.logger.Error("failed to load validator set for conflicting votes", "height",
 					voteSet.VoteA.Height, "err", err,
@@ -486,7 +490,7 @@ func (evpool *Pool) processConsensusBuffer(state sm.State) {
 				evpool.logger.Error("failed to load block time for conflicting votes", "height", voteSet.VoteA.Height)
 				continue
 			}
-			dve = types.NewDuplicateVoteEvidence(
+			dve, err = types.NewDuplicateVoteEvidence(
 				voteSet.VoteA,
 				voteSet.VoteB,
 				blockMeta.Header.Time,
@@ -500,6 +504,10 @@ func (evpool *Pool) processConsensusBuffer(state sm.State) {
 			evpool.logger.Error("inbound duplicate votes from consensus are of a greater height than current state",
 				"duplicate vote height", voteSet.VoteA.Height,
 				"state.LastBlockHeight", state.LastBlockHeight)
+			continue
+		}
+		if err != nil {
+			evpool.logger.Error("error in generating evidence from votes", "err", err)
 			continue
 		}
 
@@ -534,7 +542,7 @@ type duplicateVoteSet struct {
 }
 
 func bytesToEv(evBytes []byte) (types.Evidence, error) {
-	var evpb cmtproto.Evidence
+	var evpb tmproto.Evidence
 	err := evpb.Unmarshal(evBytes)
 	if err != nil {
 		return &types.DuplicateVoteEvidence{}, err

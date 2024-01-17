@@ -10,7 +10,6 @@ import (
 
 	"github.com/fortytw2/leaktest"
 	"github.com/go-kit/log/term"
-	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,7 +17,7 @@ import (
 	abci "github.com/tendermint/tendermint/abci/types"
 	cfg "github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
 	"github.com/tendermint/tendermint/mempool"
 	"github.com/tendermint/tendermint/p2p"
 	"github.com/tendermint/tendermint/p2p/mock"
@@ -171,7 +170,7 @@ func TestReactor_MaxTxBytes(t *testing.T) {
 
 	// Broadcast a tx, which has the max size
 	// => ensure it's received by the second reactor.
-	tx1 := cmtrand.Bytes(config.Mempool.MaxTxBytes)
+	tx1 := tmrand.Bytes(config.Mempool.MaxTxBytes)
 	err := reactors[0].mempool.CheckTx(tx1, nil, mempool.TxInfo{SenderID: mempool.UnknownPeerID})
 	require.NoError(t, err)
 	waitForTxsOnReactors(t, []types.Tx{tx1}, reactors)
@@ -181,7 +180,7 @@ func TestReactor_MaxTxBytes(t *testing.T) {
 
 	// Broadcast a tx, which is beyond the max size
 	// => ensure it's not sent
-	tx2 := cmtrand.Bytes(config.Mempool.MaxTxBytes + 1)
+	tx2 := tmrand.Bytes(config.Mempool.MaxTxBytes + 1)
 	err = reactors[0].mempool.CheckTx(tx2, nil, mempool.TxInfo{SenderID: mempool.UnknownPeerID})
 	require.Error(t, err)
 }
@@ -284,7 +283,7 @@ func TestDontExhaustMaxActiveIDs(t *testing.T) {
 
 	for i := 0; i < mempool.MaxActiveIDs+1; i++ {
 		peer := mock.NewPeer(nil)
-		reactor.ReceiveEnvelope(p2p.Envelope{
+		reactor.Receive(p2p.Envelope{
 			ChannelID: mempool.MempoolChannel,
 			Src:       peer,
 			Message:   &memproto.Message{}, // This uses the wrong message type on purpose to stop the peer as in an error state in the reactor.
@@ -292,31 +291,6 @@ func TestDontExhaustMaxActiveIDs(t *testing.T) {
 		)
 		reactor.AddPeer(peer)
 	}
-}
-
-func TestLegacyReactorReceiveBasic(t *testing.T) {
-	config := cfg.TestConfig()
-	const N = 1
-	reactors := makeAndConnectReactors(config, N)
-	var (
-		reactor = reactors[0]
-		peer    = mock.NewPeer(nil)
-	)
-	defer func() {
-		err := reactor.Stop()
-		assert.NoError(t, err)
-	}()
-
-	reactor.InitPeer(peer)
-	reactor.AddPeer(peer)
-	m := &memproto.Txs{}
-	wm := m.Wrap()
-	msg, err := proto.Marshal(wm)
-	assert.NoError(t, err)
-
-	assert.NotPanics(t, func() {
-		reactor.Receive(mempool.MempoolChannel, peer, msg)
-	})
 }
 
 // mempoolLogger is a TestingLogger which uses a different

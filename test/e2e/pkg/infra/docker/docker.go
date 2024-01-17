@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strconv"
 	"text/template"
 
 	e2e "github.com/tendermint/tendermint/test/e2e/pkg"
@@ -27,7 +26,7 @@ func (p *Provider) Setup() error {
 	}
 	//nolint: gosec
 	// G306: Expect WriteFile permissions to be 0600 or less
-	err = os.WriteFile(filepath.Join(p.Testnet.Dir, "docker-compose.yml"), compose, 0644)
+	err = os.WriteFile(filepath.Join(p.Testnet.Dir, "docker-compose.yml"), compose, 0o644)
 	if err != nil {
 		return err
 	}
@@ -38,21 +37,7 @@ func (p *Provider) Setup() error {
 // file as bytes to be written out to disk.
 func dockerComposeBytes(testnet *e2e.Testnet) ([]byte, error) {
 	// Must use version 2 Docker Compose format, to support IPv6.
-	tmpl, err := template.New("docker-compose").Funcs(template.FuncMap{
-		"misbehaviorsToString": func(misbehaviors map[int64]string) string {
-			str := ""
-			for height, misbehavior := range misbehaviors {
-				// after the first behavior set, a comma must be prepended
-				if str != "" {
-					str += ","
-				}
-				heightString := strconv.Itoa(int(height))
-				str += misbehavior + "," + heightString
-			}
-			return str
-		},
-	}).Parse(`version: '2.4'
-
+	tmpl, err := template.New("docker-compose").Parse(`version: '2.4'
 networks:
   {{ .Name }}:
     labels:
@@ -72,55 +57,23 @@ services:
     labels:
       e2e: true
     container_name: {{ .Name }}
-    image: {{ .Version }}
+    image: tendermint/e2e-node:{{ .Version }}
 {{- if eq .ABCIProtocol "builtin" }}
     entrypoint: /usr/bin/entrypoint-builtin
-{{- else if .Misbehaviors }}
-    entrypoint: /usr/bin/entrypoint-maverick
-    command: ["node", "--misbehaviors", "{{ misbehaviorsToString .Misbehaviors }}"]
+{{- else }}{{ if eq .ABCIProtocol "builtin_unsync" }}
+    entrypoint: /usr/bin/entrypoint-builtin
+{{- end }}
 {{- end }}
     init: true
     ports:
     - 26656
     - {{ if .ProxyPort }}{{ .ProxyPort }}:{{ end }}26657
-{{- if .PrometheusProxyPort }}
-    - {{ .PrometheusProxyPort }}:26660
-{{- end }}
     - 6060
     volumes:
-    - ./{{ .Name }}:/cometbft
     - ./{{ .Name }}:/tendermint
     networks:
       {{ $.Name }}:
         ipv{{ if $.IPv6 }}6{{ else }}4{{ end}}_address: {{ .IP }}
-{{- if ne .Version $.UpgradeVersion}}
-
-  {{ .Name }}_u:
-    labels:
-      e2e: true
-    container_name: {{ .Name }}_u
-    image: {{ $.UpgradeVersion }}
-{{- if eq .ABCIProtocol "builtin" }}
-    entrypoint: /usr/bin/entrypoint-builtin
-{{- else if .Misbehaviors }}
-    entrypoint: /usr/bin/entrypoint-maverick
-    command: ["node", "--misbehaviors", "{{ misbehaviorsToString .Misbehaviors }}"]
-{{- end }}
-    init: true
-    ports:
-    - 26656
-    - {{ if .ProxyPort }}{{ .ProxyPort }}:{{ end }}26657
-{{- if .PrometheusProxyPort }}
-    - {{ .PrometheusProxyPort }}:26660
-{{- end }}
-    - 6060
-    volumes:
-    - ./{{ .Name }}:/cometbft
-    - ./{{ .Name }}:/tendermint
-    networks:
-      {{ $.Name }}:
-        ipv{{ if $.IPv6 }}6{{ else }}4{{ end}}_address: {{ .IP }}
-{{- end }}
 
 {{end}}`)
 	if err != nil {

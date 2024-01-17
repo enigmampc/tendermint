@@ -91,8 +91,7 @@ func (s *SnapshotStore) Create(state *State) (abci.Snapshot, error) {
 		Hash:   hashItems(state.Values),
 		Chunks: byteChunks(bz),
 	}
-	//nolint:gosec // G306: Expect WriteFile permissions to be 0600 or less
-	err = os.WriteFile(filepath.Join(s.dir, fmt.Sprintf("%v.json", state.Height)), bz, 0o644)
+	err = os.WriteFile(filepath.Join(s.dir, fmt.Sprintf("%v.json", state.Height)), bz, 0o644) //nolint:gosec
 	if err != nil {
 		return abci.Snapshot{}, err
 	}

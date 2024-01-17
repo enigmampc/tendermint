@@ -1,3 +1,3 @@
 # Detection
 
-Deprecated, please see [light-client/detection](https://github.com/cometbft/cometbft/blob/v0.34.x/spec/light-client/detection).
+Deprecated, please see [light-client/detection](https://github.com/tendermint/tendermint/blob/main/spec/consensus/light-client/accountability.md).

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/assert"
 
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 )
 
 func TestMarshalJSON(t *testing.T) {
@@ -25,7 +25,7 @@ func TestMarshalJSON(t *testing.T) {
 			{
 				Type: "testEvent",
 				Attributes: []EventAttribute{
-					{Key: []byte("pho"), Value: []byte("bo")},
+					{Key: "pho", Value: "bo"},
 				},
 			},
 		},
@@ -61,7 +61,7 @@ func TestWriteReadMessageSimple(t *testing.T) {
 
 func TestWriteReadMessage(t *testing.T) {
 	cases := []proto.Message{
-		&cmtproto.Header{
+		&tmproto.Header{
 			Height:  4,
 			ChainID: "test",
 		},
@@ -73,7 +73,7 @@ func TestWriteReadMessage(t *testing.T) {
 		err := WriteMessage(c, buf)
 		assert.Nil(t, err)
 
-		msg := new(cmtproto.Header)
+		msg := new(tmproto.Header)
 		err = ReadMessage(buf, msg)
 		assert.Nil(t, err)
 
@@ -92,7 +92,7 @@ func TestWriteReadMessage2(t *testing.T) {
 				{
 					Type: "testEvent",
 					Attributes: []EventAttribute{
-						{Key: []byte("abc"), Value: []byte("def")},
+						{Key: "abc", Value: "def"},
 					},
 				},
 			},

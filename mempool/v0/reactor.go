@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
-
 	cfg "github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/libs/clist"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	"github.com/tendermint/tendermint/mempool"
 	"github.com/tendermint/tendermint/p2p"
 	protomem "github.com/tendermint/tendermint/proto/tendermint/mempool"
@@ -28,7 +26,7 @@ type Reactor struct {
 }
 
 type mempoolIDs struct {
-	mtx       cmtsync.RWMutex
+	mtx       tmsync.RWMutex
 	peerMap   map[p2p.ID]uint16
 	nextID    uint16              // assumes that a node will never have over 65536 active peers
 	activeIDs map[uint16]struct{} // used to check if a given peerID key is used, the value doesn't matter
@@ -157,7 +155,7 @@ func (memR *Reactor) RemovePeer(peer p2p.Peer, reason interface{}) {
 
 // Receive implements Reactor.
 // It adds any received transactions to the mempool.
-func (memR *Reactor) ReceiveEnvelope(e p2p.Envelope) {
+func (memR *Reactor) Receive(e p2p.Envelope) {
 	memR.Logger.Debug("Receive", "src", e.Src, "chId", e.ChannelID, "msg", e.Message)
 	switch msg := e.Message.(type) {
 	case *protomem.Txs:
@@ -188,23 +186,6 @@ func (memR *Reactor) ReceiveEnvelope(e p2p.Envelope) {
 	}
 
 	// broadcasting happens from go routines per peer
-}
-
-func (memR *Reactor) Receive(chID byte, peer p2p.Peer, msgBytes []byte) {
-	msg := &protomem.Message{}
-	err := proto.Unmarshal(msgBytes, msg)
-	if err != nil {
-		panic(err)
-	}
-	uw, err := msg.Unwrap()
-	if err != nil {
-		panic(err)
-	}
-	memR.ReceiveEnvelope(p2p.Envelope{
-		ChannelID: chID,
-		Src:       peer,
-		Message:   uw,
-	})
 }
 
 // PeerState describes the state of a peer.
@@ -261,10 +242,10 @@ func (memR *Reactor) broadcastTxRoutine(peer p2p.Peer) {
 		// https://github.com/tendermint/tendermint/issues/5796
 
 		if _, ok := memTx.senders.Load(peerID); !ok {
-			success := p2p.SendEnvelopeShim(peer, p2p.Envelope{ //nolint: staticcheck
+			success := peer.Send(p2p.Envelope{
 				ChannelID: mempool.MempoolChannel,
 				Message:   &protomem.Txs{Txs: [][]byte{memTx.tx}},
-			}, memR.Logger)
+			})
 			if !success {
 				time.Sleep(mempool.PeerCatchupSleepIntervalMS * time.Millisecond)
 				continue

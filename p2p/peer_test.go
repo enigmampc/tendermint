@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,7 +18,7 @@ import (
 	"github.com/tendermint/tendermint/proto/tendermint/p2p"
 
 	"github.com/tendermint/tendermint/config"
-	cmtconn "github.com/tendermint/tendermint/p2p/conn"
+	tmconn "github.com/tendermint/tendermint/p2p/conn"
 )
 
 func TestPeerBasic(t *testing.T) {
@@ -29,7 +29,7 @@ func TestPeerBasic(t *testing.T) {
 	rp.Start()
 	t.Cleanup(rp.Stop)
 
-	p, err := createOutboundPeerAndPerformHandshake(rp.Addr(), cfg, cmtconn.DefaultMConnConfig())
+	p, err := createOutboundPeerAndPerformHandshake(rp.Addr(), cfg, tmconn.DefaultMConnConfig())
 	require.Nil(err)
 
 	err = p.Start()
@@ -59,7 +59,7 @@ func TestPeerSend(t *testing.T) {
 	rp.Start()
 	t.Cleanup(rp.Stop)
 
-	p, err := createOutboundPeerAndPerformHandshake(rp.Addr(), config, cmtconn.DefaultMConnConfig())
+	p, err := createOutboundPeerAndPerformHandshake(rp.Addr(), config, tmconn.DefaultMConnConfig())
 	require.Nil(err)
 
 	err = p.Start()
@@ -72,15 +72,15 @@ func TestPeerSend(t *testing.T) {
 	})
 
 	assert.True(p.CanSend(testCh))
-	assert.True(SendEnvelopeShim(p, Envelope{ChannelID: testCh, Message: &p2p.Message{}}, p.Logger))
+	assert.True(p.Send(Envelope{ChannelID: testCh, Message: &p2p.Message{}}))
 }
 
 func createOutboundPeerAndPerformHandshake(
 	addr *NetAddress,
 	config *config.P2PConfig,
-	mConfig cmtconn.MConnConfig,
+	mConfig tmconn.MConnConfig,
 ) (*peer, error) {
-	chDescs := []*cmtconn.ChannelDescriptor{
+	chDescs := []*tmconn.ChannelDescriptor{
 		{ID: testCh, Priority: 1},
 	}
 	reactorsByCh := map[byte]Reactor{testCh: NewTestReactor(chDescs, true)}

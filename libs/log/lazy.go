@@ -3,7 +3,7 @@ package log
 import (
 	"fmt"
 
-	cmtbytes "github.com/tendermint/tendermint/libs/bytes"
+	tmbytes "github.com/tendermint/tendermint/libs/bytes"
 )
 
 type LazySprintf struct {
@@ -27,7 +27,7 @@ type LazyBlockHash struct {
 }
 
 type hashable interface {
-	Hash() cmtbytes.HexBytes
+	Hash() tmbytes.HexBytes
 }
 
 // NewLazyBlockHash defers block Hash until the Stringer interface is invoked.

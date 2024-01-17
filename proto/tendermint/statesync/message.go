@@ -3,7 +3,8 @@ package statesync
 import (
 	"fmt"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
+
 	"github.com/tendermint/tendermint/p2p"
 )
 

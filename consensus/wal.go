@@ -9,15 +9,15 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 
 	auto "github.com/tendermint/tendermint/libs/autofile"
-	cmtjson "github.com/tendermint/tendermint/libs/json"
+	tmjson "github.com/tendermint/tendermint/libs/json"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtos "github.com/tendermint/tendermint/libs/os"
+	tmos "github.com/tendermint/tendermint/libs/os"
 	"github.com/tendermint/tendermint/libs/service"
-	cmtcons "github.com/tendermint/tendermint/proto/tendermint/consensus"
-	cmttime "github.com/tendermint/tendermint/types/time"
+	tmcons "github.com/tendermint/tendermint/proto/tendermint/consensus"
+	tmtime "github.com/tendermint/tendermint/types/time"
 )
 
 const (
@@ -46,9 +46,9 @@ type EndHeightMessage struct {
 type WALMessage interface{}
 
 func init() {
-	cmtjson.RegisterType(msgInfo{}, "tendermint/wal/MsgInfo")
-	cmtjson.RegisterType(timeoutInfo{}, "tendermint/wal/TimeoutInfo")
-	cmtjson.RegisterType(EndHeightMessage{}, "tendermint/wal/EndHeightMessage")
+	tmjson.RegisterType(msgInfo{}, "tendermint/wal/MsgInfo")
+	tmjson.RegisterType(timeoutInfo{}, "tendermint/wal/TimeoutInfo")
+	tmjson.RegisterType(EndHeightMessage{}, "tendermint/wal/EndHeightMessage")
 }
 
 //--------------------------------------------------------
@@ -89,7 +89,7 @@ var _ WAL = &BaseWAL{}
 // NewWAL returns a new write-ahead logger based on `baseWAL`, which implements
 // WAL. It's flushed and synced to disk every 2s and once when stopped.
 func NewWAL(walFile string, groupOptions ...func(*auto.Group)) (*BaseWAL, error) {
-	err := cmtos.EnsureDir(filepath.Dir(walFile), 0700)
+	err := tmos.EnsureDir(filepath.Dir(walFile), 0700)
 	if err != nil {
 		return nil, fmt.Errorf("failed to ensure WAL directory is in place: %w", err)
 	}
@@ -186,7 +186,7 @@ func (wal *BaseWAL) Write(msg WALMessage) error {
 		return nil
 	}
 
-	if err := wal.enc.Encode(&TimedWALMessage{cmttime.Now(), msg}); err != nil {
+	if err := wal.enc.Encode(&TimedWALMessage{tmtime.Now(), msg}); err != nil {
 		wal.Logger.Error("Error writing msg to consensus wal. WARNING: recover may not be possible for the current height",
 			"err", err, "msg", msg)
 		return err
@@ -302,7 +302,7 @@ func (enc *WALEncoder) Encode(v *TimedWALMessage) error {
 	if err != nil {
 		return err
 	}
-	pv := cmtcons.TimedWALMessage{
+	pv := tmcons.TimedWALMessage{
 		Time: v.Time,
 		Msg:  pbMsg,
 	}
@@ -400,7 +400,7 @@ func (dec *WALDecoder) Decode() (*TimedWALMessage, error) {
 		return nil, DataCorruptionError{fmt.Errorf("checksums do not match: read: %v, actual: %v", crc, actualCRC)}
 	}
 
-	var res = new(cmtcons.TimedWALMessage)
+	var res = new(tmcons.TimedWALMessage)
 	err = proto.Unmarshal(data, res)
 	if err != nil {
 		return nil, DataCorruptionError{fmt.Errorf("failed to decode data: %v", err)}

@@ -27,7 +27,7 @@
 //	    select {
 //	    case msg <- subscription.Out():
 //	        // handle msg.Data() and msg.Events()
-//	    case <-subscription.Cancelled():
+//	    case <-subscription.Canceled():
 //	        return subscription.Err()
 //	    }
 //	}
@@ -39,7 +39,7 @@ import (
 	"fmt"
 
 	"github.com/tendermint/tendermint/libs/service"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 )
 
 type operation int
@@ -95,7 +95,7 @@ type Server struct {
 
 	// check if we have subscription before
 	// subscribing or unsubscribing
-	mtx           cmtsync.RWMutex
+	mtx           tmsync.RWMutex
 	subscriptions map[string]map[string]struct{} // subscriber -> query (string) -> empty struct
 }
 

@@ -12,14 +12,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 
 	flow "github.com/tendermint/tendermint/libs/flowrate"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtmath "github.com/tendermint/tendermint/libs/math"
+	tmmath "github.com/tendermint/tendermint/libs/math"
 	"github.com/tendermint/tendermint/libs/protoio"
 	"github.com/tendermint/tendermint/libs/service"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	"github.com/tendermint/tendermint/libs/timer"
 	tmp2p "github.com/tendermint/tendermint/proto/tendermint/p2p"
 )
@@ -102,7 +102,7 @@ type MConnection struct {
 
 	// used to ensure FlushStop and OnStop
 	// are safe to call concurrently.
-	stopMtx cmtsync.Mutex
+	stopMtx tmsync.Mutex
 
 	flushTimer *timer.ThrottleTimer // flush writes as necessary but throttled.
 	pingTimer  *time.Ticker         // send pings periodically
@@ -570,7 +570,7 @@ FOR_LOOP:
 		// Peek into bufConnReader for debugging
 		/*
 			if numBytes := c.bufConnReader.Buffered(); numBytes > 0 {
-				bz, err := c.bufConnReader.Peek(cmtmath.MinInt(numBytes, 100))
+				bz, err := c.bufConnReader.Peek(tmmath.MinInt(numBytes, 100))
 				if err == nil {
 					// return
 				} else {
@@ -597,7 +597,7 @@ FOR_LOOP:
 
 			if c.IsRunning() {
 				if err == io.EOF {
-					c.Logger.Debug("Connection is closed @ recvRoutine (likely by the other side)", "conn", c)
+					c.Logger.Info("Connection is closed @ recvRoutine (likely by the other side)", "conn", c)
 				} else {
 					c.Logger.Debug("Connection failed @ recvRoutine (reading byte)", "conn", c, "err", err)
 				}
@@ -830,14 +830,14 @@ func (ch *Channel) isSendPending() bool {
 func (ch *Channel) nextPacketMsg() tmp2p.PacketMsg {
 	packet := tmp2p.PacketMsg{ChannelID: int32(ch.desc.ID)}
 	maxSize := ch.maxPacketMsgPayloadSize
-	packet.Data = ch.sending[:cmtmath.MinInt(maxSize, len(ch.sending))]
+	packet.Data = ch.sending[:tmmath.MinInt(maxSize, len(ch.sending))]
 	if len(ch.sending) <= maxSize {
 		packet.EOF = true
 		ch.sending = nil
 		atomic.AddInt32(&ch.sendQueueSize, -1) // decrement sendQueueSize
 	} else {
 		packet.EOF = false
-		ch.sending = ch.sending[cmtmath.MinInt(maxSize, len(ch.sending)):]
+		ch.sending = ch.sending[tmmath.MinInt(maxSize, len(ch.sending)):]
 	}
 	return packet
 }

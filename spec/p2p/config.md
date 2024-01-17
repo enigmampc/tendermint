@@ -1,7 +1,7 @@
 # P2P Config
 
 Here we describe configuration options around the Peer Exchange.
-These can be set using flags or via the `$CMTHOME/config/config.toml` file.
+These can be set using flags or via the `$TMHOME/config/config.toml` file.
 
 ## Seed Mode
 
@@ -16,6 +16,14 @@ and upon incoming connection shares some peers and disconnects.
 
 Dials these seeds when we need more peers. They should return a list of peers and then disconnect.
 If we already have enough peers in the address book, we may never need to dial them.
+
+## Bootstrap Peers
+
+`--p2p.bootstrap_peers “id100000000000000000000000000000000@1.2.3.4:26656,id200000000000000000000000000000000@2.3.4.5:26656”`
+
+A list of peers to be added to the addressbook upon startup to ensure that the node has some peers to initially dial.
+Unlike persistent peers, these addresses don't have any extra privileges. The node may not necessarily connect on redial
+these peers.
 
 ## Persistent Peers
 

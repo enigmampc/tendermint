@@ -2,17 +2,15 @@ package config
 
 import (
 	"bytes"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
 
-	cmtos "github.com/tendermint/tendermint/libs/os"
+	tmos "github.com/tendermint/tendermint/libs/os"
 )
 
 // DefaultDirPerm is the default permissions used when creating directories.
-const DefaultDirPerm = 0o700
+const DefaultDirPerm = 0700
 
 var configTemplate *template.Template
 
@@ -31,25 +29,25 @@ func init() {
 // EnsureRoot creates the root, config, and data directories if they don't exist,
 // and panics if it fails.
 func EnsureRoot(rootDir string) {
-	if err := cmtos.EnsureDir(rootDir, DefaultDirPerm); err != nil {
+	if err := tmos.EnsureDir(rootDir, DefaultDirPerm); err != nil {
 		panic(err.Error())
 	}
-	if err := cmtos.EnsureDir(filepath.Join(rootDir, defaultConfigDir), DefaultDirPerm); err != nil {
+	if err := tmos.EnsureDir(filepath.Join(rootDir, DefaultConfigDir), DefaultDirPerm); err != nil {
 		panic(err.Error())
 	}
-	if err := cmtos.EnsureDir(filepath.Join(rootDir, defaultDataDir), DefaultDirPerm); err != nil {
+	if err := tmos.EnsureDir(filepath.Join(rootDir, DefaultDataDir), DefaultDirPerm); err != nil {
 		panic(err.Error())
 	}
 
 	configFilePath := filepath.Join(rootDir, defaultConfigFilePath)
 
 	// Write default config file if missing.
-	if !cmtos.FileExists(configFilePath) {
+	if !tmos.FileExists(configFilePath) {
 		writeDefaultConfigFile(configFilePath)
 	}
 }
 
-// XXX: this func should probably be called by cmd/cometbft/commands/init.go
+// XXX: this func should probably be called by cmd/tendermint/commands/init.go
 // alongside the writing of the genesis.json and priv_validator.json
 func writeDefaultConfigFile(configFilePath string) {
 	WriteConfigFile(configFilePath, DefaultConfig())
@@ -63,7 +61,7 @@ func WriteConfigFile(configFilePath string, config *Config) {
 		panic(err)
 	}
 
-	cmtos.MustWriteFile(configFilePath, buffer.Bytes(), 0o644)
+	tmos.MustWriteFile(configFilePath, buffer.Bytes(), 0644)
 }
 
 // Note: any changes to the comments/variables/mapstructure
@@ -73,24 +71,28 @@ const defaultConfigTemplate = `# This is a TOML config file.
 
 # NOTE: Any path below can be absolute (e.g. "/var/myawesomeapp/data") or
 # relative to the home directory (e.g. "data"). The home directory is
-# "$HOME/.cometbft" by default, but could be changed via $CMTHOME env variable
+# "$HOME/.tendermint" by default, but could be changed via $TMHOME env variable
 # or --home cmd flag.
+
+# The version of the Tendermint binary that created or
+# last modified the config file. Do not modify this.
+version = "{{ .BaseConfig.Version }}"
 
 #######################################################################
 ###                   Main Base Config Options                      ###
 #######################################################################
 
 # TCP or UNIX socket address of the ABCI application,
-# or the name of an ABCI application compiled in with the CometBFT binary
+# or the name of an ABCI application compiled in with the Tendermint binary
 proxy_app = "{{ .BaseConfig.ProxyApp }}"
 
 # A custom human readable name for this node
 moniker = "{{ .BaseConfig.Moniker }}"
 
-# If this node is many blocks behind the tip of the chain, FastSync
+# If this node is many blocks behind the tip of the chain, BlockSync
 # allows them to catchup quickly by downloading blocks in parallel
 # and verifying their commits
-fast_sync = {{ .BaseConfig.FastSyncMode }}
+block_sync = {{ .BaseConfig.BlockSyncMode }}
 
 # Database backend: goleveldb | cleveldb | boltdb | rocksdb | badgerdb
 # * goleveldb (github.com/syndtr/goleveldb - most popular implementation)
@@ -133,7 +135,7 @@ priv_validator_key_file = "{{ js .BaseConfig.PrivValidatorKey }}"
 # Path to the JSON file containing the last sign state of a validator
 priv_validator_state_file = "{{ js .BaseConfig.PrivValidatorState }}"
 
-# TCP or UNIX socket address for CometBFT to listen on for
+# TCP or UNIX socket address for Tendermint to listen on for
 # connections from an external PrivValidator process
 priv_validator_laddr = "{{ .BaseConfig.PrivValidatorListenAddr }}"
 
@@ -230,7 +232,7 @@ experimental_websocket_write_buffer_size = {{ .RPC.WebSocketWriteBufferSize }}
 #
 # Enabling this experimental parameter will cause the WebSocket connection to
 # be closed instead if it cannot read fast enough, allowing for greater
-# predictability in subscription behaviour.
+# predictability in subscription behavior.
 experimental_close_on_slow_client = {{ .RPC.CloseOnSlowClient }}
 
 # How long to wait for a tx to be committed during /broadcast_tx_commit.
@@ -246,17 +248,17 @@ max_body_bytes = {{ .RPC.MaxBodyBytes }}
 max_header_bytes = {{ .RPC.MaxHeaderBytes }}
 
 # The path to a file containing certificate that is used to create the HTTPS server.
-# Might be either absolute path or path related to CometBFT's config directory.
+# Might be either absolute path or path related to Tendermint's config directory.
 # If the certificate is signed by a certificate authority,
 # the certFile should be the concatenation of the server's certificate, any intermediates,
 # and the CA's certificate.
-# NOTE: both tls_cert_file and tls_key_file must be present for CometBFT to create HTTPS server.
+# NOTE: both tls_cert_file and tls_key_file must be present for Tendermint to create HTTPS server.
 # Otherwise, HTTP server is run.
 tls_cert_file = "{{ .RPC.TLSCertFile }}"
 
 # The path to a file containing matching private key that is used to create the HTTPS server.
-# Might be either absolute path or path related to CometBFT's config directory.
-# NOTE: both tls-cert-file and tls-key-file must be present for CometBFT to create HTTPS server.
+# Might be either absolute path or path related to Tendermint's config directory.
+# NOTE: both tls-cert-file and tls-key-file must be present for Tendermint to create HTTPS server.
 # Otherwise, HTTP server is run.
 tls_key_file = "{{ .RPC.TLSKeyFile }}"
 
@@ -280,6 +282,11 @@ external_address = "{{ .P2P.ExternalAddress }}"
 
 # Comma separated list of seed nodes to connect to
 seeds = "{{ .P2P.Seeds }}"
+
+# Comma separated list of peers to be added to the peer store
+# on startup. Either BootstrapPeers or PersistentPeers are
+# needed for peer discovery
+bootstrap_peers = "{{ .P2P.BootstrapPeers }}"
 
 # Comma separated list of nodes to keep persistent connections to
 persistent_peers = "{{ .P2P.PersistentPeers }}"
@@ -347,13 +354,24 @@ dial_timeout = "{{ .P2P.DialTimeout }}"
 #   2) "v1" - prioritized mempool.
 version = "{{ .Mempool.Version }}"
 
-# Recheck (default: true) defines whether CometBFT should recheck the
+# Recheck (default: true) defines whether Tendermint should recheck the
 # validity for all remaining transaction in the mempool after a block.
 # Since a block affects the application state, some transactions in the
 # mempool may become invalid. If this does not apply to your application,
 # you can disable rechecking.
 recheck = {{ .Mempool.Recheck }}
+
+# Broadcast (default: true) defines whether the mempool should relay
+# transactions to other peers. Setting this to false will stop the mempool
+# from relaying transactions to other peers until they are included in a
+# block. In other words, if Broadcast is disabled, only the peer you send
+# the tx to will see it until it is included in a block.
 broadcast = {{ .Mempool.Broadcast }}
+
+# WalPath (default: "") configures the location of the Write Ahead Log
+# (WAL) for the mempool. The WAL is disabled by default. To enable, set
+# WalPath to where you want the WAL to be written (e.g.
+# "data/mempool.wal").
 wal_dir = "{{ js .Mempool.WalPath }}"
 
 # Maximum number of transactions in the mempool
@@ -434,15 +452,17 @@ chunk_request_timeout = "{{ .StateSync.ChunkRequestTimeout }}"
 chunk_fetchers = "{{ .StateSync.ChunkFetchers }}"
 
 #######################################################
-###       Fast Sync Configuration Connections       ###
+###       Block Sync Configuration Options          ###
 #######################################################
-[fastsync]
+[blocksync]
 
-# Fast Sync version to use:
-#   1) "v0" (default) - the legacy fast sync implementation
-#   2) "v1" - refactor of v0 version for better testability
-#   2) "v2" - complete redesign of v0, optimized for testability & readability
-version = "{{ .FastSync.Version }}"
+# Block Sync version to use:
+#
+# In v0.37, v1 and v2 of the block sync protocols were deprecated.
+# Please use v0 instead.
+#
+#   1) "v0" - the default block sync implementation
+version = "{{ .BlockSync.Version }}"
 
 #######################################################
 ###         Consensus Configuration Options         ###
@@ -540,101 +560,3 @@ max_open_connections = {{ .Instrumentation.MaxOpenConnections }}
 # Instrumentation namespace
 namespace = "{{ .Instrumentation.Namespace }}"
 `
-
-/****** these are for test settings ***********/
-
-func ResetTestRoot(testName string) *Config {
-	return ResetTestRootWithChainID(testName, "")
-}
-
-func ResetTestRootWithChainID(testName string, chainID string) *Config {
-	// create a unique, concurrency-safe test directory under os.TempDir()
-	rootDir, err := os.MkdirTemp("", fmt.Sprintf("%s-%s_", chainID, testName))
-	if err != nil {
-		panic(err)
-	}
-	// ensure config and data subdirs are created
-	if err := cmtos.EnsureDir(filepath.Join(rootDir, defaultConfigDir), DefaultDirPerm); err != nil {
-		panic(err)
-	}
-	if err := cmtos.EnsureDir(filepath.Join(rootDir, defaultDataDir), DefaultDirPerm); err != nil {
-		panic(err)
-	}
-
-	baseConfig := DefaultBaseConfig()
-	configFilePath := filepath.Join(rootDir, defaultConfigFilePath)
-	genesisFilePath := filepath.Join(rootDir, baseConfig.Genesis)
-	privKeyFilePath := filepath.Join(rootDir, baseConfig.PrivValidatorKey)
-	privStateFilePath := filepath.Join(rootDir, baseConfig.PrivValidatorState)
-
-	// Write default config file if missing.
-	if !cmtos.FileExists(configFilePath) {
-		writeDefaultConfigFile(configFilePath)
-	}
-	if !cmtos.FileExists(genesisFilePath) {
-		if chainID == "" {
-			chainID = "cometbft_test"
-		}
-		testGenesis := fmt.Sprintf(testGenesisFmt, chainID)
-		cmtos.MustWriteFile(genesisFilePath, []byte(testGenesis), 0o644)
-	}
-	// we always overwrite the priv val
-	cmtos.MustWriteFile(privKeyFilePath, []byte(testPrivValidatorKey), 0o644)
-	cmtos.MustWriteFile(privStateFilePath, []byte(testPrivValidatorState), 0o644)
-
-	config := TestConfig().SetRoot(rootDir)
-	return config
-}
-
-var testGenesisFmt = `{
-  "genesis_time": "2018-10-10T08:20:13.695936996Z",
-  "chain_id": "%s",
-  "initial_height": "1",
-	"consensus_params": {
-		"block": {
-			"max_bytes": "22020096",
-			"max_gas": "-1",
-			"time_iota_ms": "10"
-		},
-		"evidence": {
-			"max_age_num_blocks": "100000",
-			"max_age_duration": "172800000000000",
-			"max_bytes": "1048576"
-		},
-		"validator": {
-			"pub_key_types": [
-				"ed25519"
-			]
-		},
-		"version": {}
-	},
-  "validators": [
-    {
-      "pub_key": {
-        "type": "tendermint/PubKeyEd25519",
-        "value":"AT/+aaL1eB0477Mud9JMm8Sh8BIvOYlPGC9KkIUmFaE="
-      },
-      "power": "10",
-      "name": ""
-    }
-  ],
-  "app_hash": ""
-}`
-
-var testPrivValidatorKey = `{
-  "address": "A3258DCBF45DCA0DF052981870F2D1441A36D145",
-  "pub_key": {
-    "type": "tendermint/PubKeyEd25519",
-    "value": "AT/+aaL1eB0477Mud9JMm8Sh8BIvOYlPGC9KkIUmFaE="
-  },
-  "priv_key": {
-    "type": "tendermint/PrivKeyEd25519",
-    "value": "EVkqJO/jIXp3rkASXfh9YnyToYXRXhBr6g9cQVxPFnQBP/5povV4HTjvsy530kybxKHwEi85iU8YL0qQhSYVoQ=="
-  }
-}`
-
-var testPrivValidatorState = `{
-  "height": "0",
-  "round": 0,
-  "step": 0
-}`

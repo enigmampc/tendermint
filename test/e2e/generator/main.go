@@ -31,7 +31,7 @@ type CLI struct {
 func NewCLI() *CLI {
 	cli := &CLI{}
 	cli.root = &cobra.Command{
-		Use:           "generator -d dir [-g int] [-m version_weight_csv] [-p]",
+		Use:           "generator",
 		Short:         "End-to-end testnet generator",
 		SilenceUsage:  true,
 		SilenceErrors: true, // we'll output them ourselves in Run()
@@ -48,26 +48,21 @@ func NewCLI() *CLI {
 			if err != nil {
 				return err
 			}
-			prometheus, err := cmd.Flags().GetBool("prometheus")
-			if err != nil {
-				return err
-			}
-			return cli.generate(dir, groups, multiVersion, prometheus)
+			return cli.generate(dir, groups, multiVersion)
 		},
 	}
 
 	cli.root.PersistentFlags().StringP("dir", "d", "", "Output directory for manifests")
 	_ = cli.root.MarkPersistentFlagRequired("dir")
-	cli.root.PersistentFlags().StringP("multi-version", "m", "", "Comma-separated list of versions of CometBFT to test in the generated testnets, "+
+	cli.root.PersistentFlags().StringP("multi-version", "m", "", "Comma-separated list of versions of Tendermint to test in the generated testnets, "+
 		"or empty to only use this branch's version")
 	cli.root.PersistentFlags().IntP("groups", "g", 0, "Number of groups")
-	cli.root.PersistentFlags().BoolP("prometheus", "p", false, "Enable generation of Prometheus metrics on all manifests")
 
 	return cli
 }
 
 // generate generates manifests in a directory.
-func (cli *CLI) generate(dir string, groups int, multiVersion string, prometheus bool) error {
+func (cli *CLI) generate(dir string, groups int, multiVersion string) error {
 	err := os.MkdirAll(dir, 0o755)
 	if err != nil {
 		return err
@@ -76,7 +71,6 @@ func (cli *CLI) generate(dir string, groups int, multiVersion string, prometheus
 	cfg := &generateConfig{
 		randSource:   rand.New(rand.NewSource(randomSeed)), //nolint:gosec
 		multiVersion: multiVersion,
-		prometheus:   prometheus,
 	}
 	manifests, err := Generate(cfg)
 	if err != nil {

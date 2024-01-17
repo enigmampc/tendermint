@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+
 	tmenclave "github.com/scrtlabs/tm-secret-enclave"
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/types"
@@ -58,10 +59,9 @@ func validateBlock(state State, block *types.Block) error {
 			block.AppHash,
 		)
 	}
-	hashCP := types.HashConsensusParams(state.ConsensusParams)
-	if !bytes.Equal(block.ConsensusHash, hashCP) {
+	if !bytes.Equal(block.ConsensusHash, state.ConsensusParams.Hash()) {
 		return fmt.Errorf("wrong Block.Header.ConsensusHash.  Expected %X, got %v",
-			hashCP,
+			state.ConsensusParams.Hash(),
 			block.ConsensusHash,
 		)
 	}
@@ -111,8 +111,6 @@ func validateBlock(state State, block *types.Block) error {
 			block.ProposerAddress,
 		)
 	}
-
-	//println("Validating block {}", block.Height, "with random: ", hex.EncodeToString(block.EncryptedRandom.Random), "proof: ", hex.EncodeToString(block.EncryptedRandom.Proof), "hash: ", hex.EncodeToString(block.DataHash))
 
 	if block.EncryptedRandom != nil {
 		proofValid := tmenclave.ValidateRandom(block.EncryptedRandom.Random, block.EncryptedRandom.Proof, block.AppHash, uint64(block.Height))

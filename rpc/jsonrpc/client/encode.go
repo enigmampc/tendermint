@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"reflect"
 
-	cmtjson "github.com/tendermint/tendermint/libs/json"
+	tmjson "github.com/tendermint/tendermint/libs/json"
 )
 
 func argsToURLValues(args map[string]interface{}) (url.Values, error) {
@@ -36,7 +36,7 @@ func argsToJSON(args map[string]interface{}) error {
 			continue
 		}
 
-		data, err := cmtjson.Marshal(v)
+		data, err := tmjson.Marshal(v)
 		if err != nil {
 			return err
 		}

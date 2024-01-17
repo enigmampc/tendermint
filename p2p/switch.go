@@ -6,7 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
+
 	"github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/libs/cmap"
 	"github.com/tendermint/tendermint/libs/rand"
@@ -262,14 +263,13 @@ func (sw *Switch) OnStop() {
 //---------------------------------------------------------------------
 // Peers
 
-// BroadcastEnvelope runs a go routine for each attempted send, which will block trying
+// Broadcast runs a go routine for each attempted send, which will block trying
 // to send for defaultSendTimeoutSeconds. Returns a channel which receives
 // success values for each attempted send (false if times out). Channel will be
 // closed once msg bytes are sent to all peers (or time out).
-// BroadcastEnvelope sends to the peers using the SendEnvelope method.
 //
-// NOTE: BroadcastEnvelope uses goroutines, so order of broadcast may not be preserved.
-func (sw *Switch) BroadcastEnvelope(e Envelope) chan bool {
+// NOTE: Broadcast uses goroutines, so order of broadcast may not be preserved.
+func (sw *Switch) Broadcast(e Envelope) chan bool {
 	sw.Logger.Debug("Broadcast", "channel", e.ChannelID)
 
 	peers := sw.peers.List()
@@ -280,41 +280,7 @@ func (sw *Switch) BroadcastEnvelope(e Envelope) chan bool {
 	for _, peer := range peers {
 		go func(p Peer) {
 			defer wg.Done()
-			success := SendEnvelopeShim(p, e, sw.Logger)
-			successChan <- success
-		}(peer)
-	}
-
-	go func() {
-		wg.Wait()
-		close(successChan)
-	}()
-
-	return successChan
-}
-
-// Broadcast runs a go routine for each attempted send, which will block trying
-// to send for defaultSendTimeoutSeconds. Returns a channel which receives
-// success values for each attempted send (false if times out). Channel will be
-// closed once msg bytes are sent to all peers (or time out).
-// Broadcast sends to the peers using the Send method.
-//
-// NOTE: Broadcast uses goroutines, so order of broadcast may not be preserved.
-//
-// Deprecated: code looking to broadcast data to all peers should use BroadcastEnvelope.
-// Broadcast will be removed in 0.37.
-func (sw *Switch) Broadcast(chID byte, msgBytes []byte) chan bool {
-	sw.Logger.Debug("Broadcast", "channel", chID)
-
-	peers := sw.peers.List()
-	var wg sync.WaitGroup
-	wg.Add(len(peers))
-	successChan := make(chan bool, len(peers))
-
-	for _, peer := range peers {
-		go func(p Peer) {
-			defer wg.Done()
-			success := p.Send(chID, msgBytes)
+			success := p.Send(e)
 			successChan <- success
 		}(peer)
 	}
@@ -369,7 +335,7 @@ func (sw *Switch) StopPeerForError(peer Peer, reason interface{}) {
 		return
 	}
 
-	sw.Logger.Debug("Stopping peer for error", "peer", peer, "err", reason)
+	sw.Logger.Error("Stopping peer for error", "peer", peer, "err", reason)
 	sw.stopAndRemovePeer(peer, reason)
 
 	if peer.IsPersistent() {
@@ -435,7 +401,7 @@ func (sw *Switch) reconnectToPeer(addr *NetAddress) {
 	defer sw.reconnecting.Delete(string(addr.ID))
 
 	start := time.Now()
-	sw.Logger.Debug("Reconnecting to peer", "addr", addr)
+	sw.Logger.Info("Reconnecting to peer", "addr", addr)
 	for i := 0; i < reconnectAttempts; i++ {
 		if !sw.IsRunning() {
 			return
@@ -448,13 +414,13 @@ func (sw *Switch) reconnectToPeer(addr *NetAddress) {
 			return
 		}
 
-		sw.Logger.Debug("Error reconnecting to peer. Trying again", "tries", i, "err", err, "addr", addr)
+		sw.Logger.Info("Error reconnecting to peer. Trying again", "tries", i, "err", err, "addr", addr)
 		// sleep a set amount
 		sw.randomSleep(reconnectInterval)
 		continue
 	}
 
-	sw.Logger.Debug("Failed to reconnect to peer. Beginning exponential backoff",
+	sw.Logger.Error("Failed to reconnect to peer. Beginning exponential backoff",
 		"addr", addr, "elapsed", time.Since(start))
 	for i := 0; i < reconnectBackOffAttempts; i++ {
 		if !sw.IsRunning() {
@@ -471,7 +437,7 @@ func (sw *Switch) reconnectToPeer(addr *NetAddress) {
 		} else if _, ok := err.(ErrCurrentlyDialingOrExistingAddress); ok {
 			return
 		}
-		sw.Logger.Debug("Error reconnecting to peer. Trying again", "tries", i, "err", err, "addr", addr)
+		sw.Logger.Info("Error reconnecting to peer. Trying again", "tries", i, "err", err, "addr", addr)
 	}
 	sw.Logger.Error("Failed to reconnect to peer. Giving up", "addr", addr, "elapsed", time.Since(start))
 }
@@ -684,7 +650,7 @@ func (sw *Switch) acceptRoutine() {
 					sw.addrBook.AddOurAddress(&addr)
 				}
 
-				sw.Logger.Debug(
+				sw.Logger.Info(
 					"Inbound Peer rejected",
 					"err", err,
 					"numPeers", sw.peers.Size(),

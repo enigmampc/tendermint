@@ -23,6 +23,8 @@ const (
 	MaxActiveIDs = math.MaxUint16
 )
 
+//go:generate ../scripts/mockery_generate.sh Mempool
+
 // Mempool defines the mempool interface.
 //
 // Updates to the mempool need to be synchronized with committing a block so
@@ -159,7 +161,7 @@ func (e ErrTxTooLarge) Error() string {
 	return fmt.Sprintf("Tx too large. Max size is %d, but got %d", e.Max, e.Actual)
 }
 
-// ErrMempoolIsFull defines an error where CometBFT and the application cannot
+// ErrMempoolIsFull defines an error where Tendermint and the application cannot
 // handle that much load.
 type ErrMempoolIsFull struct {
 	NumTxs      int

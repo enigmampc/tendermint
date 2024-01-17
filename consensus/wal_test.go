@@ -17,8 +17,8 @@ import (
 	"github.com/tendermint/tendermint/crypto/merkle"
 	"github.com/tendermint/tendermint/libs/autofile"
 	"github.com/tendermint/tendermint/libs/log"
-	cmttypes "github.com/tendermint/tendermint/types"
-	cmttime "github.com/tendermint/tendermint/types/time"
+	tmtypes "github.com/tendermint/tendermint/types"
+	tmtime "github.com/tendermint/tendermint/types/time"
 )
 
 const (
@@ -75,17 +75,17 @@ func TestWALTruncate(t *testing.T) {
 	dec := NewWALDecoder(gr)
 	msg, err := dec.Decode()
 	assert.NoError(t, err, "expected to decode a message")
-	rs, ok := msg.Msg.(cmttypes.EventDataRoundState)
+	rs, ok := msg.Msg.(tmtypes.EventDataRoundState)
 	assert.True(t, ok, "expected message of type EventDataRoundState")
 	assert.Equal(t, rs.Height, h+1, "wrong height")
 }
 
 func TestWALEncoderDecoder(t *testing.T) {
-	now := cmttime.Now()
+	now := tmtime.Now()
 	msgs := []TimedWALMessage{
 		{Time: now, Msg: EndHeightMessage{0}},
 		{Time: now, Msg: timeoutInfo{Duration: time.Second, Height: 1, Round: 1, Step: types.RoundStepPropose}},
-		{Time: now, Msg: cmttypes.EventDataRoundState{Height: 1, Round: 1, Step: ""}},
+		{Time: now, Msg: tmtypes.EventDataRoundState{Height: 1, Round: 1, Step: ""}},
 	}
 
 	b := new(bytes.Buffer)
@@ -130,7 +130,7 @@ func TestWALWrite(t *testing.T) {
 	msg := &BlockPartMessage{
 		Height: 1,
 		Round:  1,
-		Part: &cmttypes.Part{
+		Part: &tmtypes.Part{
 			Index: 1,
 			Bytes: make([]byte, 1),
 			Proof: merkle.Proof{
@@ -170,7 +170,7 @@ func TestWALSearchForEndHeight(t *testing.T) {
 	dec := NewWALDecoder(gr)
 	msg, err := dec.Decode()
 	assert.NoError(t, err, "expected to decode a message")
-	rs, ok := msg.Msg.(cmttypes.EventDataRoundState)
+	rs, ok := msg.Msg.(tmtypes.EventDataRoundState)
 	assert.True(t, ok, "expected message of type EventDataRoundState")
 	assert.Equal(t, rs.Height, h+1, "wrong height")
 }
@@ -268,23 +268,18 @@ func BenchmarkWalDecode512B(b *testing.B) {
 func BenchmarkWalDecode10KB(b *testing.B) {
 	benchmarkWalDecode(b, 10*1024)
 }
-
 func BenchmarkWalDecode100KB(b *testing.B) {
 	benchmarkWalDecode(b, 100*1024)
 }
-
 func BenchmarkWalDecode1MB(b *testing.B) {
 	benchmarkWalDecode(b, 1024*1024)
 }
-
 func BenchmarkWalDecode10MB(b *testing.B) {
 	benchmarkWalDecode(b, 10*1024*1024)
 }
-
 func BenchmarkWalDecode100MB(b *testing.B) {
 	benchmarkWalDecode(b, 100*1024*1024)
 }
-
 func BenchmarkWalDecode1GB(b *testing.B) {
 	benchmarkWalDecode(b, 1024*1024*1024)
 }

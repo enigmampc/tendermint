@@ -6,16 +6,16 @@ import (
 	"strings"
 	"time"
 
-	dbm "github.com/cometbft/cometbft-db"
+	dbm "github.com/tendermint/tm-db"
 
 	"github.com/tendermint/tendermint/libs/log"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	"github.com/tendermint/tendermint/light"
 	lightprovider "github.com/tendermint/tendermint/light/provider"
 	lighthttp "github.com/tendermint/tendermint/light/provider/http"
 	lightrpc "github.com/tendermint/tendermint/light/rpc"
 	lightdb "github.com/tendermint/tendermint/light/store/db"
-	cmtstate "github.com/tendermint/tendermint/proto/tendermint/state"
+	tmstate "github.com/tendermint/tendermint/proto/tendermint/state"
 	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
 	sm "github.com/tendermint/tendermint/state"
 	"github.com/tendermint/tendermint/types"
@@ -37,9 +37,9 @@ type StateProvider interface {
 
 // lightClientStateProvider is a state provider using the light client.
 type lightClientStateProvider struct {
-	cmtsync.Mutex // light.Client is not concurrency-safe
+	tmsync.Mutex  // light.Client is not concurrency-safe
 	lc            *light.Client
-	version       cmtstate.Version
+	version       tmstate.Version
 	initialHeight int64
 	providers     map[lightprovider.Provider]string
 }
@@ -48,7 +48,7 @@ type lightClientStateProvider struct {
 func NewLightClientStateProvider(
 	ctx context.Context,
 	chainID string,
-	version cmtstate.Version,
+	version tmstate.Version,
 	initialHeight int64,
 	servers []string,
 	trustOptions light.TrustOptions,
@@ -156,7 +156,7 @@ func (s *lightClientStateProvider) State(ctx context.Context, height uint64) (sm
 		return sm.State{}, err
 	}
 
-	state.Version = cmtstate.Version{
+	state.Version = tmstate.Version{
 		Consensus: currentLightBlock.Version,
 		Software:  version.TMCoreSemVer,
 	}

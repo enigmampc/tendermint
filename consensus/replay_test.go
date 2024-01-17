@@ -12,22 +12,23 @@ import (
 	"testing"
 	"time"
 
-	dbm "github.com/cometbft/cometbft-db"
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	dbm "github.com/tendermint/tm-db"
 
 	"github.com/tendermint/tendermint/abci/example/kvstore"
 	abci "github.com/tendermint/tendermint/abci/types"
 	cfg "github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/crypto"
 	cryptoenc "github.com/tendermint/tendermint/crypto/encoding"
+	"github.com/tendermint/tendermint/internal/test"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
 	mempl "github.com/tendermint/tendermint/mempool"
 	"github.com/tendermint/tendermint/privval"
-	cmtstate "github.com/tendermint/tendermint/proto/tendermint/state"
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	tmstate "github.com/tendermint/tendermint/proto/tendermint/state"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	"github.com/tendermint/tendermint/proxy"
 	sm "github.com/tendermint/tendermint/state"
 	"github.com/tendermint/tendermint/types"
@@ -64,8 +65,7 @@ func TestMain(m *testing.M) {
 // wal writer when we need to, instead of with every message.
 
 func startNewStateAndWaitForBlock(t *testing.T, consensusReplayConfig *cfg.Config,
-	lastBlockHeight int64, blockDB dbm.DB, stateStore sm.Store,
-) {
+	lastBlockHeight int64, blockDB dbm.DB, stateStore sm.Store) {
 	logger := log.TestingLogger()
 	state, _ := stateStore.LoadFromDBOrGenesisFile(consensusReplayConfig.GenesisFile())
 	privValidator := loadPrivValidator(consensusReplayConfig)
@@ -97,8 +97,8 @@ func startNewStateAndWaitForBlock(t *testing.T, consensusReplayConfig *cfg.Confi
 	require.NoError(t, err)
 	select {
 	case <-newBlockSub.Out():
-	case <-newBlockSub.Cancelled():
-		t.Fatal("newBlockSub was cancelled")
+	case <-newBlockSub.Canceled():
+		t.Fatal("newBlockSub was canceled")
 	case <-time.After(120 * time.Second):
 		t.Fatal("Timed out waiting for new block (see trace above)")
 	}
@@ -126,18 +126,14 @@ func TestWALCrash(t *testing.T) {
 		initFn       func(dbm.DB, *State, context.Context)
 		heightToStop int64
 	}{
-		{
-			"empty block",
+		{"empty block",
 			func(stateDB dbm.DB, cs *State, ctx context.Context) {},
-			1,
-		},
-		{
-			"many non-empty blocks",
+			1},
+		{"many non-empty blocks",
 			func(stateDB dbm.DB, cs *State, ctx context.Context) {
 				go sendTxs(ctx, cs)
 			},
-			3,
-		},
+			3},
 	}
 
 	for i, tc := range testCases {
@@ -150,8 +146,7 @@ func TestWALCrash(t *testing.T) {
 }
 
 func crashWALandCheckLiveness(t *testing.T, consensusReplayConfig *cfg.Config,
-	initFn func(dbm.DB, *State, context.Context), heightToStop int64,
-) {
+	initFn func(dbm.DB, *State, context.Context), heightToStop int64) {
 	walPanicked := make(chan error)
 	crashingWal := &crashingWAL{panicCh: walPanicked, heightToStop: heightToStop}
 
@@ -289,8 +284,7 @@ func (w *crashingWAL) FlushAndSync() error { return w.next.FlushAndSync() }
 
 func (w *crashingWAL) SearchForEndHeight(
 	height int64,
-	options *WALSearchOptions,
-) (rd io.ReadCloser, found bool, err error) {
+	options *WALSearchOptions) (rd io.ReadCloser, found bool, err error) {
 	return w.next.SearchForEndHeight(height, options)
 }
 
@@ -358,7 +352,7 @@ func TestSimulateValidatorsChange(t *testing.T) {
 	ensureNewRound(newRoundCh, height, 0)
 	ensureNewProposal(proposalCh, height, round)
 	rs := css[0].GetRoundState()
-	signAddVotes(css[0], cmtproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), vss[1:nVals]...)
+	signAddVotes(css[0], tmproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), vss[1:nVals]...)
 	ensureNewRound(newRoundCh, height+1, 0)
 
 	// HEIGHT 2
@@ -370,14 +364,16 @@ func TestSimulateValidatorsChange(t *testing.T) {
 	require.NoError(t, err)
 	newValidatorTx1 := kvstore.MakeValSetChangeTx(valPubKey1ABCI, testMinPower)
 	err = assertMempool(css[0].txNotifier).CheckTx(newValidatorTx1, nil, mempl.TxInfo{})
-	assert.Nil(t, err)
-	propBlock, _ := css[0].createProposalBlock() // changeProposer(t, cs1, vs2)
-	propBlockParts := propBlock.MakePartSet(partSize)
+	assert.NoError(t, err)
+	propBlock, err := css[0].createProposalBlock() // changeProposer(t, cs1, vs2)
+	require.NoError(t, err)
+	propBlockParts, err := propBlock.MakePartSet(partSize)
+	require.NoError(t, err)
 	blockID := types.BlockID{Hash: propBlock.Hash(), PartSetHeader: propBlockParts.Header()}
 
 	proposal := types.NewProposal(vss[1].Height, round, -1, blockID)
 	p := proposal.ToProto()
-	if err := vss[1].SignProposal(config.ChainID(), p); err != nil {
+	if err := vss[1].SignProposal(genDoc.ChainID, p); err != nil {
 		t.Fatal("failed to sign bad proposal", err)
 	}
 	proposal.Signature = p.Signature
@@ -388,7 +384,7 @@ func TestSimulateValidatorsChange(t *testing.T) {
 	}
 	ensureNewProposal(proposalCh, height, round)
 	rs = css[0].GetRoundState()
-	signAddVotes(css[0], cmtproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), vss[1:nVals]...)
+	signAddVotes(css[0], tmproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), vss[1:nVals]...)
 	ensureNewRound(newRoundCh, height+1, 0)
 
 	// HEIGHT 3
@@ -400,14 +396,16 @@ func TestSimulateValidatorsChange(t *testing.T) {
 	require.NoError(t, err)
 	updateValidatorTx1 := kvstore.MakeValSetChangeTx(updatePubKey1ABCI, 25)
 	err = assertMempool(css[0].txNotifier).CheckTx(updateValidatorTx1, nil, mempl.TxInfo{})
-	assert.Nil(t, err)
-	propBlock, _ = css[0].createProposalBlock() // changeProposer(t, cs1, vs2)
-	propBlockParts = propBlock.MakePartSet(partSize)
+	assert.NoError(t, err)
+	propBlock, err = css[0].createProposalBlock() // changeProposer(t, cs1, vs2)
+	require.NoError(t, err)
+	propBlockParts, err = propBlock.MakePartSet(partSize)
+	require.NoError(t, err)
 	blockID = types.BlockID{Hash: propBlock.Hash(), PartSetHeader: propBlockParts.Header()}
 
 	proposal = types.NewProposal(vss[2].Height, round, -1, blockID)
 	p = proposal.ToProto()
-	if err := vss[2].SignProposal(config.ChainID(), p); err != nil {
+	if err := vss[2].SignProposal(genDoc.ChainID, p); err != nil {
 		t.Fatal("failed to sign bad proposal", err)
 	}
 	proposal.Signature = p.Signature
@@ -418,7 +416,7 @@ func TestSimulateValidatorsChange(t *testing.T) {
 	}
 	ensureNewProposal(proposalCh, height, round)
 	rs = css[0].GetRoundState()
-	signAddVotes(css[0], cmtproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), vss[1:nVals]...)
+	signAddVotes(css[0], tmproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), vss[1:nVals]...)
 	ensureNewRound(newRoundCh, height+1, 0)
 
 	// HEIGHT 4
@@ -437,9 +435,11 @@ func TestSimulateValidatorsChange(t *testing.T) {
 	require.NoError(t, err)
 	newValidatorTx3 := kvstore.MakeValSetChangeTx(newVal3ABCI, testMinPower)
 	err = assertMempool(css[0].txNotifier).CheckTx(newValidatorTx3, nil, mempl.TxInfo{})
-	assert.Nil(t, err)
-	propBlock, _ = css[0].createProposalBlock() // changeProposer(t, cs1, vs2)
-	propBlockParts = propBlock.MakePartSet(partSize)
+	assert.NoError(t, err)
+	propBlock, err = css[0].createProposalBlock() // changeProposer(t, cs1, vs2)
+	require.NoError(t, err)
+	propBlockParts, err = propBlock.MakePartSet(partSize)
+	require.NoError(t, err)
 	blockID = types.BlockID{Hash: propBlock.Hash(), PartSetHeader: propBlockParts.Header()}
 	newVss := make([]*validatorStub, nVals+1)
 	copy(newVss, vss[:nVals+1])
@@ -464,7 +464,7 @@ func TestSimulateValidatorsChange(t *testing.T) {
 
 	proposal = types.NewProposal(vss[3].Height, round, -1, blockID)
 	p = proposal.ToProto()
-	if err := vss[3].SignProposal(config.ChainID(), p); err != nil {
+	if err := vss[3].SignProposal(genDoc.ChainID, p); err != nil {
 		t.Fatal("failed to sign bad proposal", err)
 	}
 	proposal.Signature = p.Signature
@@ -484,7 +484,7 @@ func TestSimulateValidatorsChange(t *testing.T) {
 		if i == selfIndex {
 			continue
 		}
-		signAddVotes(css[0], cmtproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), newVss[i])
+		signAddVotes(css[0], tmproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), newVss[i])
 	}
 
 	ensureNewRound(newRoundCh, height+1, 0)
@@ -503,7 +503,7 @@ func TestSimulateValidatorsChange(t *testing.T) {
 		if i == selfIndex {
 			continue
 		}
-		signAddVotes(css[0], cmtproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), newVss[i])
+		signAddVotes(css[0], tmproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), newVss[i])
 	}
 	ensureNewRound(newRoundCh, height+1, 0)
 
@@ -512,9 +512,11 @@ func TestSimulateValidatorsChange(t *testing.T) {
 	incrementHeight(vss...)
 	removeValidatorTx3 := kvstore.MakeValSetChangeTx(newVal3ABCI, 0)
 	err = assertMempool(css[0].txNotifier).CheckTx(removeValidatorTx3, nil, mempl.TxInfo{})
-	assert.Nil(t, err)
-	propBlock, _ = css[0].createProposalBlock() // changeProposer(t, cs1, vs2)
-	propBlockParts = propBlock.MakePartSet(partSize)
+	assert.NoError(t, err)
+	propBlock, err = css[0].createProposalBlock() // changeProposer(t, cs1, vs2)
+	require.NoError(t, err)
+	propBlockParts, err = propBlock.MakePartSet(partSize)
+	require.NoError(t, err)
 	blockID = types.BlockID{Hash: propBlock.Hash(), PartSetHeader: propBlockParts.Header()}
 	newVss = make([]*validatorStub, nVals+3)
 	copy(newVss, vss[:nVals+3])
@@ -523,7 +525,7 @@ func TestSimulateValidatorsChange(t *testing.T) {
 	selfIndex = valIndexFn(0)
 	proposal = types.NewProposal(vss[1].Height, round, -1, blockID)
 	p = proposal.ToProto()
-	if err := vss[1].SignProposal(config.ChainID(), p); err != nil {
+	if err := vss[1].SignProposal(genDoc.ChainID, p); err != nil {
 		t.Fatal("failed to sign bad proposal", err)
 	}
 	proposal.Signature = p.Signature
@@ -538,7 +540,7 @@ func TestSimulateValidatorsChange(t *testing.T) {
 		if i == selfIndex {
 			continue
 		}
-		signAddVotes(css[0], cmtproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), newVss[i])
+		signAddVotes(css[0], tmproto.PrecommitType, rs.ProposalBlock.Hash(), rs.ProposalBlockParts.Header(), newVss[i])
 	}
 	ensureNewRound(newRoundCh, height+1, 0)
 
@@ -594,18 +596,18 @@ func TestHandshakeReplayNone(t *testing.T) {
 func TestMockProxyApp(t *testing.T) {
 	sim.CleanupFunc() // clean the test env created in TestSimulateValidatorsChange
 	logger := log.TestingLogger()
-	validTxs, invalidTxs := 0, 0
+	var validTxs, invalidTxs = 0, 0
 	txIndex := 0
 
 	assert.NotPanics(t, func() {
-		abciResWithEmptyDeliverTx := new(cmtstate.ABCIResponses)
+		abciResWithEmptyDeliverTx := new(tmstate.ABCIResponses)
 		abciResWithEmptyDeliverTx.DeliverTxs = make([]*abci.ResponseDeliverTx, 0)
 		abciResWithEmptyDeliverTx.DeliverTxs = append(abciResWithEmptyDeliverTx.DeliverTxs, &abci.ResponseDeliverTx{})
 
 		// called when saveABCIResponses:
 		bytes, err := proto.Marshal(abciResWithEmptyDeliverTx)
 		require.NoError(t, err)
-		loadedAbciRes := new(cmtstate.ABCIResponses)
+		loadedAbciRes := new(tmstate.ABCIResponses)
 
 		// this also happens sm.LoadABCIResponses
 		err = proto.Unmarshal(bytes, loadedAbciRes)
@@ -613,7 +615,7 @@ func TestMockProxyApp(t *testing.T) {
 
 		mock := newMockProxyApp([]byte("mock_hash"), loadedAbciRes)
 
-		abciRes := new(cmtstate.ABCIResponses)
+		abciRes := new(tmstate.ABCIResponses)
 		abciRes.DeliverTxs = make([]*abci.ResponseDeliverTx, len(loadedAbciRes.DeliverTxs))
 		// Execute transactions and get hash.
 		proxyCb := func(req *abci.Request, res *abci.Response) {
@@ -673,7 +675,7 @@ func testHandshakeReplay(t *testing.T, config *cfg.Config, nBlocks int, mode uin
 		config = sim.Config
 		chain = append([]*types.Block{}, sim.Chain...) // copy chain
 		commits = sim.Commits
-		store = newMockBlockStore(config, genesisState.ConsensusParams)
+		store = newMockBlockStore(t, config, genesisState.ConsensusParams)
 	} else { // test single node
 		testConfig := ResetConfig(fmt.Sprintf("%s_%v_s", t.Name(), mode))
 		defer os.RemoveAll(testConfig.RootDir)
@@ -698,7 +700,7 @@ func testHandshakeReplay(t *testing.T, config *cfg.Config, nBlocks int, mode uin
 		require.NoError(t, err)
 		pubKey, err := privVal.GetPubKey()
 		require.NoError(t, err)
-		stateDB, genesisState, store = stateAndStore(config, pubKey, kvstore.ProtocolVersion)
+		stateDB, genesisState, store = stateAndStore(t, config, pubKey, kvstore.ProtocolVersion)
 
 	}
 	stateStore := sm.NewStore(stateDB, sm.StoreOptions{
@@ -708,8 +710,8 @@ func testHandshakeReplay(t *testing.T, config *cfg.Config, nBlocks int, mode uin
 	store.commits = commits
 
 	state := genesisState.Copy()
-	// run the chain through state.ApplyBlock to build up the CometBFT state
-	state = buildTMStateFromChain(config, stateStore, state, chain, nBlocks, mode)
+	// run the chain through state.ApplyBlock to build up the tendermint state
+	state = buildTMStateFromChain(t, config, stateStore, state, chain, nBlocks, mode, store)
 	latestAppHash := state.AppHash
 
 	// make a new client creator
@@ -719,21 +721,21 @@ func testHandshakeReplay(t *testing.T, config *cfg.Config, nBlocks int, mode uin
 	clientCreator2 := proxy.NewLocalClientCreator(kvstoreApp)
 	if nBlocks > 0 {
 		// run nBlocks against a new client to build up the app state.
-		// use a throwaway CometBFT state
-		proxyApp := proxy.NewAppConns(clientCreator2)
+		// use a throwaway tendermint state
+		proxyApp := proxy.NewAppConns(clientCreator2, proxy.NopMetrics())
 		stateDB1 := dbm.NewMemDB()
 		stateStore := sm.NewStore(stateDB1, sm.StoreOptions{
 			DiscardABCIResponses: false,
 		})
 		err := stateStore.Save(genesisState)
 		require.NoError(t, err)
-		buildAppStateFromChain(proxyApp, stateStore, genesisState, chain, nBlocks, mode)
+		buildAppStateFromChain(t, proxyApp, stateStore, genesisState, chain, nBlocks, mode, store)
 	}
 
 	// Prune block store if requested
 	expectError := false
 	if mode == 3 {
-		pruned, err := store.PruneBlocks(2)
+		pruned, _, err := store.PruneBlocks(2, state)
 		require.NoError(t, err)
 		require.EqualValues(t, 1, pruned)
 		expectError = int64(nBlocks) < 2
@@ -742,7 +744,7 @@ func testHandshakeReplay(t *testing.T, config *cfg.Config, nBlocks int, mode uin
 	// now start the app using the handshake - it should sync
 	genDoc, _ := sm.MakeGenesisDocFromFile(config.GenesisFile())
 	handshaker := NewHandshaker(stateStore, state, store, genDoc)
-	proxyApp := proxy.NewAppConns(clientCreator2)
+	proxyApp := proxy.NewAppConns(clientCreator2, proxy.NopMetrics())
 	if err := proxyApp.Start(); err != nil {
 		t.Fatalf("Error starting proxy app connections: %v", err)
 	}
@@ -787,21 +789,20 @@ func testHandshakeReplay(t *testing.T, config *cfg.Config, nBlocks int, mode uin
 	}
 }
 
-func applyBlock(stateStore sm.Store, st sm.State, blk *types.Block, proxyApp proxy.AppConns) sm.State {
+func applyBlock(t *testing.T, stateStore sm.Store, st sm.State, blk *types.Block, proxyApp proxy.AppConns, bs *mockBlockStore) sm.State {
 	testPartSize := types.BlockPartSizeBytes
-	blockExec := sm.NewBlockExecutor(stateStore, log.TestingLogger(), proxyApp.Consensus(), mempool, evpool)
+	blockExec := sm.NewBlockExecutor(stateStore, log.TestingLogger(), proxyApp.Consensus(), mempool, evpool, bs)
 
-	blkID := types.BlockID{Hash: blk.Hash(), PartSetHeader: blk.MakePartSet(testPartSize).Header()}
-	newState, _, err := blockExec.ApplyBlock(st, blkID, blk)
-	if err != nil {
-		panic(err)
-	}
+	bps, err := blk.MakePartSet(testPartSize)
+	require.NoError(t, err)
+	blkID := types.BlockID{Hash: blk.Hash(), PartSetHeader: bps.Header()}
+	newState, err := blockExec.ApplyBlock(st, blkID, blk)
+	require.NoError(t, err)
 	return newState
 }
 
-func buildAppStateFromChain(proxyApp proxy.AppConns, stateStore sm.Store,
-	state sm.State, chain []*types.Block, nBlocks int, mode uint,
-) {
+func buildAppStateFromChain(t *testing.T, proxyApp proxy.AppConns, stateStore sm.Store,
+	state sm.State, chain []*types.Block, nBlocks int, mode uint, blockStore *mockBlockStore) {
 	// start a new app without handshake, play nBlocks blocks
 	if err := proxyApp.Start(); err != nil {
 		panic(err)
@@ -822,37 +823,39 @@ func buildAppStateFromChain(proxyApp proxy.AppConns, stateStore sm.Store,
 	case 0:
 		for i := 0; i < nBlocks; i++ {
 			block := chain[i]
-			state = applyBlock(stateStore, state, block, proxyApp)
+			state = applyBlock(t, stateStore, state, block, proxyApp, blockStore)
 		}
 	case 1, 2, 3:
 		for i := 0; i < nBlocks-1; i++ {
 			block := chain[i]
-			state = applyBlock(stateStore, state, block, proxyApp)
+			state = applyBlock(t, stateStore, state, block, proxyApp, blockStore)
 		}
 
 		if mode == 2 || mode == 3 {
 			// update the kvstore height and apphash
 			// as if we ran commit but not
-			state = applyBlock(stateStore, state, chain[nBlocks-1], proxyApp)
+			state = applyBlock(t, stateStore, state, chain[nBlocks-1], proxyApp, blockStore)
 		}
 	default:
 		panic(fmt.Sprintf("unknown mode %v", mode))
 	}
+
 }
 
 func buildTMStateFromChain(
+	t *testing.T,
 	config *cfg.Config,
 	stateStore sm.Store,
 	state sm.State,
 	chain []*types.Block,
 	nBlocks int,
 	mode uint,
-) sm.State {
-	// run the whole chain against this client to build up the CometBFT state
+	blockStore *mockBlockStore) sm.State {
+	// run the whole chain against this client to build up the tendermint state
 	clientCreator := proxy.NewLocalClientCreator(
 		kvstore.NewPersistentKVStoreApplication(
 			filepath.Join(config.DBDir(), fmt.Sprintf("replay_test_%d_%d_t", nBlocks, mode))))
-	proxyApp := proxy.NewAppConns(clientCreator)
+	proxyApp := proxy.NewAppConns(clientCreator, proxy.NopMetrics())
 	if err := proxyApp.Start(); err != nil {
 		panic(err)
 	}
@@ -872,19 +875,19 @@ func buildTMStateFromChain(
 	case 0:
 		// sync right up
 		for _, block := range chain {
-			state = applyBlock(stateStore, state, block, proxyApp)
+			state = applyBlock(t, stateStore, state, block, proxyApp, blockStore)
 		}
 
 	case 1, 2, 3:
 		// sync up to the penultimate as if we stored the block.
 		// whether we commit or not depends on the appHash
 		for _, block := range chain[:len(chain)-1] {
-			state = applyBlock(stateStore, state, block, proxyApp)
+			state = applyBlock(t, stateStore, state, block, proxyApp, blockStore)
 		}
 
 		// apply the final block to a state copy so we can
 		// get the right next appHash but keep the state back
-		applyBlock(stateStore, state, chain[len(chain)-1], proxyApp)
+		applyBlock(t, stateStore, state, chain[len(chain)-1], proxyApp, blockStore)
 	default:
 		panic(fmt.Sprintf("unknown mode %v", mode))
 	}
@@ -893,7 +896,7 @@ func buildTMStateFromChain(
 }
 
 func TestHandshakePanicsIfAppReturnsWrongAppHash(t *testing.T) {
-	// 1. Initialize CometBFT and commit 3 blocks with the following app hashes:
+	// 1. Initialize tendermint and commit 3 blocks with the following app hashes:
 	//		- 0x01
 	//		- 0x02
 	//		- 0x03
@@ -903,24 +906,26 @@ func TestHandshakePanicsIfAppReturnsWrongAppHash(t *testing.T) {
 	const appVersion = 0x0
 	pubKey, err := privVal.GetPubKey()
 	require.NoError(t, err)
-	stateDB, state, store := stateAndStore(config, pubKey, appVersion)
+	stateDB, state, store := stateAndStore(t, config, pubKey, appVersion)
 	stateStore := sm.NewStore(stateDB, sm.StoreOptions{
 		DiscardABCIResponses: false,
 	})
 	genDoc, _ := sm.MakeGenesisDocFromFile(config.GenesisFile())
 	state.LastValidators = state.Validators.Copy()
 	// mode = 0 for committing all the blocks
-	blocks := makeBlocks(3, &state, privVal)
+	blocks, err := test.MakeBlocks(3, state, []types.PrivValidator{privVal})
+	require.NoError(t, err)
+
 	store.chain = blocks
 
-	// 2. CometBFT must panic if app returns wrong hash for the first block
+	// 2. Tendermint must panic if app returns wrong hash for the first block
 	//		- RANDOM HASH
 	//		- 0x02
 	//		- 0x03
 	{
 		app := &badApp{numBlocks: 3, allHashesAreWrong: true}
 		clientCreator := proxy.NewLocalClientCreator(app)
-		proxyApp := proxy.NewAppConns(clientCreator)
+		proxyApp := proxy.NewAppConns(clientCreator, proxy.NopMetrics())
 		err := proxyApp.Start()
 		require.NoError(t, err)
 		t.Cleanup(func() {
@@ -937,14 +942,14 @@ func TestHandshakePanicsIfAppReturnsWrongAppHash(t *testing.T) {
 		})
 	}
 
-	// 3. CometBFT must panic if app returns wrong hash for the last block
+	// 3. Tendermint must panic if app returns wrong hash for the last block
 	//		- 0x01
 	//		- 0x02
 	//		- RANDOM HASH
 	{
 		app := &badApp{numBlocks: 3, onlyLastHashIsWrong: true}
 		clientCreator := proxy.NewLocalClientCreator(app)
-		proxyApp := proxy.NewAppConns(clientCreator)
+		proxyApp := proxy.NewAppConns(clientCreator, proxy.NopMetrics())
 		err := proxyApp.Start()
 		require.NoError(t, err)
 		t.Cleanup(func() {
@@ -960,52 +965,6 @@ func TestHandshakePanicsIfAppReturnsWrongAppHash(t *testing.T) {
 			}
 		})
 	}
-}
-
-func makeBlocks(n int, state *sm.State, privVal types.PrivValidator) []*types.Block {
-	blocks := make([]*types.Block, 0)
-
-	var (
-		prevBlock     *types.Block
-		prevBlockMeta *types.BlockMeta
-	)
-
-	appHeight := byte(0x01)
-	for i := 0; i < n; i++ {
-		height := int64(i + 1)
-
-		block, parts := makeBlock(*state, prevBlock, prevBlockMeta, privVal, height)
-		blocks = append(blocks, block)
-
-		prevBlock = block
-		prevBlockMeta = types.NewBlockMeta(block, parts)
-
-		// update state
-		state.AppHash = []byte{appHeight}
-		appHeight++
-		state.LastBlockHeight = height
-	}
-
-	return blocks
-}
-
-func makeBlock(state sm.State, lastBlock *types.Block, lastBlockMeta *types.BlockMeta,
-	privVal types.PrivValidator, height int64,
-) (*types.Block, *types.PartSet) {
-	lastCommit := types.NewCommit(height-1, 0, types.BlockID{}, nil)
-	if height > 1 {
-		vote, _ := types.MakeVote(
-			lastBlock.Header.Height,
-			lastBlockMeta.BlockID,
-			state.Validators,
-			privVal,
-			lastBlock.Header.ChainID,
-			time.Now())
-		lastCommit = types.NewCommit(vote.Height, vote.Round,
-			lastBlockMeta.BlockID, []types.CommitSig{vote.CommitSig()})
-	}
-
-	return state.MakeBlock(height, []types.Tx{}, lastCommit, nil, state.Validators.GetProposer().Address)
 }
 
 type badApp struct {
@@ -1020,11 +979,11 @@ func (app *badApp) Commit() abci.ResponseCommit {
 	app.height++
 	if app.onlyLastHashIsWrong {
 		if app.height == app.numBlocks {
-			return abci.ResponseCommit{Data: cmtrand.Bytes(8)}
+			return abci.ResponseCommit{Data: tmrand.Bytes(8)}
 		}
 		return abci.ResponseCommit{Data: []byte{app.height}}
 	} else if app.allHashesAreWrong {
-		return abci.ResponseCommit{Data: cmtrand.Bytes(8)}
+		return abci.ResponseCommit{Data: tmrand.Bytes(8)}
 	}
 
 	panic("either allHashesAreWrong or onlyLastHashIsWrong must be set")
@@ -1073,7 +1032,7 @@ func makeBlockchainFromWAL(wal WAL) ([]*types.Block, []*types.Commit, error) {
 		case EndHeightMessage:
 			// if its not the first one, we have a full block
 			if thisBlockParts != nil {
-				pbb := new(cmtproto.Block)
+				var pbb = new(tmproto.Block)
 				bz, err := io.ReadAll(thisBlockParts.GetReader())
 				if err != nil {
 					panic(err)
@@ -1106,7 +1065,7 @@ func makeBlockchainFromWAL(wal WAL) ([]*types.Block, []*types.Commit, error) {
 				return nil, nil, err
 			}
 		case *types.Vote:
-			if p.Type == cmtproto.PrecommitType {
+			if p.Type == tmproto.PrecommitType {
 				thisBlockCommit = types.NewCommit(p.Height, p.Round,
 					p.BlockID, []types.CommitSig{p.CommitSig()})
 			}
@@ -1117,7 +1076,7 @@ func makeBlockchainFromWAL(wal WAL) ([]*types.Block, []*types.Commit, error) {
 	if err != nil {
 		panic(err)
 	}
-	pbb := new(cmtproto.Block)
+	var pbb = new(tmproto.Block)
 	err = proto.Unmarshal(bz, pbb)
 	if err != nil {
 		panic(err)
@@ -1159,6 +1118,7 @@ func readPieceFromWAL(msg *TimedWALMessage) interface{} {
 
 // fresh state and mock store
 func stateAndStore(
+	t *testing.T,
 	config *cfg.Config,
 	pubKey crypto.PubKey,
 	appVersion uint64,
@@ -1167,12 +1127,12 @@ func stateAndStore(
 	stateStore := sm.NewStore(stateDB, sm.StoreOptions{
 		DiscardABCIResponses: false,
 	})
-	state, _ := sm.MakeGenesisStateFromFile(config.GenesisFile())
+	state, err := sm.MakeGenesisStateFromFile(config.GenesisFile())
+	require.NoError(t, err)
 	state.Version.Consensus.App = appVersion
-	store := newMockBlockStore(config, state.ConsensusParams)
-	if err := stateStore.Save(state); err != nil {
-		panic(err)
-	}
+	store := newMockBlockStore(t, config, state.ConsensusParams)
+	require.NoError(t, stateStore.Save(state))
+
 	return stateDB, state, store
 }
 
@@ -1181,15 +1141,20 @@ func stateAndStore(
 
 type mockBlockStore struct {
 	config  *cfg.Config
-	params  cmtproto.ConsensusParams
+	params  types.ConsensusParams
 	chain   []*types.Block
 	commits []*types.Commit
 	base    int64
+	t       *testing.T
 }
 
 // TODO: NewBlockStore(db.NewMemDB) ...
-func newMockBlockStore(config *cfg.Config, params cmtproto.ConsensusParams) *mockBlockStore {
-	return &mockBlockStore{config, params, nil, nil, 0}
+func newMockBlockStore(t *testing.T, config *cfg.Config, params types.ConsensusParams) *mockBlockStore {
+	return &mockBlockStore{
+		config: config,
+		params: params,
+		t:      t,
+	}
 }
 
 func (bs *mockBlockStore) Height() int64                       { return int64(len(bs.chain)) }
@@ -1200,27 +1165,28 @@ func (bs *mockBlockStore) LoadBlock(height int64) *types.Block { return bs.chain
 func (bs *mockBlockStore) LoadBlockByHash(hash []byte) *types.Block {
 	return bs.chain[int64(len(bs.chain))-1]
 }
-
+func (bs *mockBlockStore) LoadBlockMetaByHash(hash []byte) *types.BlockMeta { return nil }
 func (bs *mockBlockStore) LoadBlockMeta(height int64) *types.BlockMeta {
 	block := bs.chain[height-1]
+	bps, err := block.MakePartSet(types.BlockPartSizeBytes)
+	require.NoError(bs.t, err)
 	return &types.BlockMeta{
-		BlockID: types.BlockID{Hash: block.Hash(), PartSetHeader: block.MakePartSet(types.BlockPartSizeBytes).Header()},
+		BlockID: types.BlockID{Hash: block.Hash(), PartSetHeader: bps.Header()},
 		Header:  block.Header,
 	}
 }
 func (bs *mockBlockStore) LoadBlockPart(height int64, index int) *types.Part { return nil }
 func (bs *mockBlockStore) SaveBlock(block *types.Block, blockParts *types.PartSet, seenCommit *types.Commit) {
 }
-
 func (bs *mockBlockStore) LoadBlockCommit(height int64) *types.Commit {
 	return bs.commits[height-1]
 }
-
 func (bs *mockBlockStore) LoadSeenCommit(height int64) *types.Commit {
 	return bs.commits[height-1]
 }
 
-func (bs *mockBlockStore) PruneBlocks(height int64) (uint64, error) {
+func (bs *mockBlockStore) PruneBlocks(height int64, state sm.State) (uint64, int64, error) {
+	evidencePoint := height
 	pruned := uint64(0)
 	for i := int64(0); i < height-1; i++ {
 		bs.chain[i] = nil
@@ -1228,8 +1194,11 @@ func (bs *mockBlockStore) PruneBlocks(height int64) (uint64, error) {
 		pruned++
 	}
 	bs.base = height
-	return pruned, nil
+	return pruned, evidencePoint, nil
 }
+
+func (bs *mockBlockStore) DeleteLatestBlock() error { return nil }
+func (bs *mockBlockStore) Close() error             { return nil }
 
 //---------------------------------------
 // Test handshake/init chain
@@ -1245,7 +1214,7 @@ func TestHandshakeUpdatesValidators(t *testing.T) {
 	privVal := privval.LoadFilePV(config.PrivValidatorKeyFile(), config.PrivValidatorStateFile())
 	pubKey, err := privVal.GetPubKey()
 	require.NoError(t, err)
-	stateDB, state, store := stateAndStore(config, pubKey, 0x0)
+	stateDB, state, store := stateAndStore(t, config, pubKey, 0x0)
 	stateStore := sm.NewStore(stateDB, sm.StoreOptions{
 		DiscardABCIResponses: false,
 	})
@@ -1255,7 +1224,7 @@ func TestHandshakeUpdatesValidators(t *testing.T) {
 	// now start the app using the handshake - it should sync
 	genDoc, _ := sm.MakeGenesisDocFromFile(config.GenesisFile())
 	handshaker := NewHandshaker(stateStore, state, store, genDoc)
-	proxyApp := proxy.NewAppConns(clientCreator)
+	proxyApp := proxy.NewAppConns(clientCreator, proxy.NopMetrics())
 	if err := proxyApp.Start(); err != nil {
 		t.Fatalf("Error starting proxy app connections: %v", err)
 	}

@@ -7,15 +7,15 @@ import (
 
 	abcicli "github.com/tendermint/tendermint/abci/client"
 	"github.com/tendermint/tendermint/abci/types"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
 )
 
 func InitChain(client abcicli.Client) error {
 	total := 10
 	vals := make([]types.ValidatorUpdate, total)
 	for i := 0; i < total; i++ {
-		pubkey := cmtrand.Bytes(33)
-		power := cmtrand.Int()
+		pubkey := tmrand.Bytes(33)
+		power := tmrand.Int()
 		vals[i] = types.UpdateValidator(pubkey, int64(power), "")
 	}
 	_, err := client.InitChainSync(types.RequestInitChain{
@@ -26,17 +26,6 @@ func InitChain(client abcicli.Client) error {
 		return err
 	}
 	fmt.Println("Passed test: InitChain")
-	return nil
-}
-
-func SetOption(client abcicli.Client, key, value string) error {
-	_, err := client.SetOptionSync(types.RequestSetOption{Key: key, Value: value})
-	if err != nil {
-		fmt.Println("Failed test: SetOption")
-		fmt.Printf("error while setting %v=%v: \nerror: %v\n", key, value, err)
-		return err
-	}
-	fmt.Println("Passed test: SetOption")
 	return nil
 }
 
@@ -73,6 +62,32 @@ func DeliverTx(client abcicli.Client, txBytes []byte, codeExp uint32, dataExp []
 		return errors.New("deliverTx error")
 	}
 	fmt.Println("Passed test: DeliverTx")
+	return nil
+}
+
+func PrepareProposal(client abcicli.Client, txBytes [][]byte, txExpected [][]byte, dataExp []byte) error {
+	res, _ := client.PrepareProposalSync(types.RequestPrepareProposal{Txs: txBytes})
+	for i, tx := range res.Txs {
+		if !bytes.Equal(tx, txExpected[i]) {
+			fmt.Println("Failed test: PrepareProposal")
+			fmt.Printf("PrepareProposal transaction was unexpected. Got %x expected %x.",
+				tx, txExpected[i])
+			return errors.New("PrepareProposal error")
+		}
+	}
+	fmt.Println("Passed test: PrepareProposal")
+	return nil
+}
+
+func ProcessProposal(client abcicli.Client, txBytes [][]byte, statusExp types.ResponseProcessProposal_ProposalStatus) error {
+	res, _ := client.ProcessProposalSync(types.RequestProcessProposal{Txs: txBytes})
+	if res.Status != statusExp {
+		fmt.Println("Failed test: ProcessProposal")
+		fmt.Printf("ProcessProposal response status was unexpected. Got %v expected %v.",
+			res.Status, statusExp)
+		return errors.New("ProcessProposal error")
+	}
+	fmt.Println("Passed test: ProcessProposal")
 	return nil
 }
 

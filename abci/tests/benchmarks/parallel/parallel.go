@@ -6,12 +6,12 @@ import (
 	"log"
 
 	"github.com/tendermint/tendermint/abci/types"
-	cmtnet "github.com/tendermint/tendermint/libs/net"
+	tmnet "github.com/tendermint/tendermint/libs/net"
 )
 
 func main() {
 
-	conn, err := cmtnet.Connect("unix://test.sock")
+	conn, err := tmnet.Connect("unix://test.sock")
 	if err != nil {
 		log.Fatal(err.Error())
 	}

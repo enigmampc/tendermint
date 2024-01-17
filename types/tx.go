@@ -8,8 +8,8 @@ import (
 
 	"github.com/tendermint/tendermint/crypto/merkle"
 	"github.com/tendermint/tendermint/crypto/tmhash"
-	cmtbytes "github.com/tendermint/tendermint/libs/bytes"
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	tmbytes "github.com/tendermint/tendermint/libs/bytes"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 )
 
 // TxKeySize is the size of the transaction key index
@@ -42,25 +42,11 @@ func (tx Tx) String() string {
 // Txs is a slice of Tx.
 type Txs []Tx
 
-// Bytes returns the raw bytes of the txs
-func (txs Txs) Bytes() [][]byte {
-	txBzs := make([][]byte, len(txs))
-	for i, tx := range txs {
-		txBzs[i] = tx
-	}
-	return txBzs
-}
-
 // Hash returns the Merkle root hash of the transaction hashes.
 // i.e. the leaves of the tree are the hashes of the txs.
 func (txs Txs) Hash() []byte {
-	// These allocations will be removed once Txs is switched to [][]byte,
-	// ref #2603. This is because golang does not allow type casting slices without unsafe
-	txBzs := make([][]byte, len(txs))
-	for i := 0; i < len(txs); i++ {
-		txBzs[i] = txs[i].Hash()
-	}
-	return merkle.HashFromByteSlices(txBzs)
+	hl := txs.hashList()
+	return merkle.HashFromByteSlices(hl)
 }
 
 // Index returns the index of this transaction in the list, or -1 if not found
@@ -83,16 +69,9 @@ func (txs Txs) IndexByHash(hash []byte) int {
 	return -1
 }
 
-// Proof returns a simple merkle proof for this node.
-// Panics if i < 0 or i >= len(txs)
-// TODO: optimize this!
 func (txs Txs) Proof(i int) TxProof {
-	l := len(txs)
-	bzs := make([][]byte, l)
-	for i := 0; i < l; i++ {
-		bzs[i] = txs[i].Hash()
-	}
-	root, proofs := merkle.ProofsFromByteSlices(bzs)
+	hl := txs.hashList()
+	root, proofs := merkle.ProofsFromByteSlices(hl)
 
 	return TxProof{
 		RootHash: root,
@@ -101,11 +80,55 @@ func (txs Txs) Proof(i int) TxProof {
 	}
 }
 
+func (txs Txs) hashList() [][]byte {
+	hl := make([][]byte, len(txs))
+	for i := 0; i < len(txs); i++ {
+		hl[i] = txs[i].Hash()
+	}
+	return hl
+}
+
+// Txs is a slice of transactions. Sorting a Txs value orders the transactions
+// lexicographically.
+func (txs Txs) Len() int      { return len(txs) }
+func (txs Txs) Swap(i, j int) { txs[i], txs[j] = txs[j], txs[i] }
+func (txs Txs) Less(i, j int) bool {
+	return bytes.Compare(txs[i], txs[j]) == -1
+}
+
+func ToTxs(txl [][]byte) Txs {
+	txs := make([]Tx, 0, len(txl))
+	for _, tx := range txl {
+		txs = append(txs, tx)
+	}
+	return txs
+}
+
+func (txs Txs) Validate(maxSizeBytes int64) error {
+	var size int64
+	for _, tx := range txs {
+		size += int64(len(tx))
+		if size > maxSizeBytes {
+			return fmt.Errorf("transaction data size exceeds maximum %d", maxSizeBytes)
+		}
+	}
+	return nil
+}
+
+// ToSliceOfBytes converts a Txs to slice of byte slices.
+func (txs Txs) ToSliceOfBytes() [][]byte {
+	txBzs := make([][]byte, len(txs))
+	for i := 0; i < len(txs); i++ {
+		txBzs[i] = txs[i]
+	}
+	return txBzs
+}
+
 // TxProof represents a Merkle proof of the presence of a transaction in the Merkle tree.
 type TxProof struct {
-	RootHash cmtbytes.HexBytes `json:"root_hash"`
-	Data     Tx                `json:"data"`
-	Proof    merkle.Proof      `json:"proof"`
+	RootHash tmbytes.HexBytes `json:"root_hash"`
+	Data     Tx               `json:"data"`
+	Proof    merkle.Proof     `json:"proof"`
 }
 
 // Leaf returns the hash(tx), which is the leaf in the merkle tree which this proof refers to.
@@ -132,11 +155,11 @@ func (tp TxProof) Validate(dataHash []byte) error {
 	return nil
 }
 
-func (tp TxProof) ToProto() cmtproto.TxProof {
+func (tp TxProof) ToProto() tmproto.TxProof {
 
 	pbProof := tp.Proof.ToProto()
 
-	pbtp := cmtproto.TxProof{
+	pbtp := tmproto.TxProof{
 		RootHash: tp.RootHash,
 		Data:     tp.Data,
 		Proof:    pbProof,
@@ -144,7 +167,7 @@ func (tp TxProof) ToProto() cmtproto.TxProof {
 
 	return pbtp
 }
-func TxProofFromProto(pb cmtproto.TxProof) (TxProof, error) {
+func TxProofFromProto(pb tmproto.TxProof) (TxProof, error) {
 
 	pbProof, err := merkle.ProofFromProto(pb.Proof)
 	if err != nil {
@@ -160,7 +183,7 @@ func TxProofFromProto(pb cmtproto.TxProof) (TxProof, error) {
 	return pbtp, nil
 }
 
-// ComputeProtoSizeForTxs wraps the transactions in cmtproto.Data{} and calculates the size.
+// ComputeProtoSizeForTxs wraps the transactions in tmproto.Data{} and calculates the size.
 // https://developers.google.com/protocol-buffers/docs/encoding
 func ComputeProtoSizeForTxs(txs []Tx) int64 {
 	data := Data{Txs: txs}

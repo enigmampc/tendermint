@@ -10,24 +10,21 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/ed25519"
 	"github.com/tendermint/tendermint/crypto/secp256k1"
 	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
-	mcs "github.com/tendermint/tendermint/test/maverick/consensus"
 )
 
 const (
-	randomSeed               int64  = 2308084734268
-	proxyPortFirst           uint32 = 5701
-	prometheusProxyPortFirst uint32 = 6701
+	randomSeed     int64  = 2308084734268
+	proxyPortFirst uint32 = 5701
 
 	defaultBatchSize   = 2
 	defaultConnections = 1
 	defaultTxSizeBytes = 1024
-
-	localVersion = "cometbft/e2e-node:local-version"
 )
 
 type (
@@ -42,67 +39,70 @@ const (
 	ModeLight     Mode = "light"
 	ModeSeed      Mode = "seed"
 
-	ProtocolBuiltin Protocol = "builtin"
-	ProtocolFile    Protocol = "file"
-	ProtocolGRPC    Protocol = "grpc"
-	ProtocolTCP     Protocol = "tcp"
-	ProtocolUNIX    Protocol = "unix"
+	ProtocolBuiltin       Protocol = "builtin"
+	ProtocolBuiltinUnsync Protocol = "builtin_unsync"
+	ProtocolFile          Protocol = "file"
+	ProtocolGRPC          Protocol = "grpc"
+	ProtocolTCP           Protocol = "tcp"
+	ProtocolUNIX          Protocol = "unix"
 
 	PerturbationDisconnect Perturbation = "disconnect"
 	PerturbationKill       Perturbation = "kill"
 	PerturbationPause      Perturbation = "pause"
 	PerturbationRestart    Perturbation = "restart"
-	PerturbationUpgrade    Perturbation = "upgrade"
+
+	EvidenceAgeHeight int64         = 7
+	EvidenceAgeTime   time.Duration = 500 * time.Millisecond
 )
 
 // Testnet represents a single testnet.
 type Testnet struct {
-	Name              string
-	File              string
-	Dir               string
-	IP                *net.IPNet
-	InitialHeight     int64
-	InitialState      map[string]string
-	Validators        map[*Node]int64
-	ValidatorUpdates  map[int64]map[*Node]int64
-	Nodes             []*Node
-	KeyType           string
-	Evidence          int
-	LoadTxSizeBytes   int
-	LoadTxBatchSize   int
-	LoadTxConnections int
-	ABCIProtocol      string
-	UpgradeVersion    string
-	Prometheus        bool
+	Name                 string
+	File                 string
+	Dir                  string
+	IP                   *net.IPNet
+	InitialHeight        int64
+	InitialState         map[string]string
+	Validators           map[*Node]int64
+	ValidatorUpdates     map[int64]map[*Node]int64
+	Nodes                []*Node
+	KeyType              string
+	Evidence             int
+	LoadTxSizeBytes      int
+	LoadTxBatchSize      int
+	LoadTxConnections    int
+	ABCIProtocol         string
+	PrepareProposalDelay time.Duration
+	ProcessProposalDelay time.Duration
+	CheckTxDelay         time.Duration
 }
 
-// Node represents a CometBFT node in a testnet.
+// Node represents a Tendermint node in a testnet.
 type Node struct {
-	Name                string
-	Version             string
-	Testnet             *Testnet
-	Mode                Mode
-	PrivvalKey          crypto.PrivKey
-	NodeKey             crypto.PrivKey
-	IP                  net.IP
-	ProxyPort           uint32
-	StartAt             int64
-	FastSync            string
-	StateSync           bool
-	Mempool             string
-	Database            string
-	ABCIProtocol        Protocol
-	PrivvalProtocol     Protocol
-	PersistInterval     uint64
-	SnapshotInterval    uint64
-	RetainBlocks        uint64
-	Seeds               []*Node
-	PersistentPeers     []*Node
-	Perturbations       []Perturbation
-	Misbehaviors        map[int64]string
-	SendNoLoad          bool
-	Prometheus          bool
-	PrometheusProxyPort uint32
+	Name             string
+	Version          string
+	Testnet          *Testnet
+	Mode             Mode
+	PrivvalKey       crypto.PrivKey
+	NodeKey          crypto.PrivKey
+	IP               net.IP
+	ProxyPort        uint32
+	StartAt          int64
+	BlockSync        string
+	StateSync        bool
+	Mempool          string
+	Database         string
+	ABCIProtocol     Protocol
+	PrivvalProtocol  Protocol
+	PersistInterval  uint64
+	SnapshotInterval uint64
+	RetainBlocks     uint64
+	Seeds            []*Node
+	PersistentPeers  []*Node
+	Perturbations    []Perturbation
+
+	// SendNoLoad determines if the e2e test should send load to this node.
+	SendNoLoad bool
 }
 
 // LoadTestnet loads a testnet from a manifest file, using the filename to
@@ -114,28 +114,29 @@ func LoadTestnet(manifest Manifest, fname string, ifd InfrastructureData) (*Test
 	dir := strings.TrimSuffix(fname, filepath.Ext(fname))
 	keyGen := newKeyGenerator(randomSeed)
 	proxyPortGen := newPortGenerator(proxyPortFirst)
-	prometheusProxyPortGen := newPortGenerator(prometheusProxyPortFirst)
 	_, ipNet, err := net.ParseCIDR(ifd.Network)
 	if err != nil {
 		return nil, fmt.Errorf("invalid IP network address %q: %w", ifd.Network, err)
 	}
 
 	testnet := &Testnet{
-		Name:              filepath.Base(dir),
-		File:              fname,
-		Dir:               dir,
-		IP:                ipNet,
-		InitialHeight:     1,
-		InitialState:      manifest.InitialState,
-		Validators:        map[*Node]int64{},
-		ValidatorUpdates:  map[int64]map[*Node]int64{},
-		Nodes:             []*Node{},
-		LoadTxSizeBytes:   manifest.LoadTxSizeBytes,
-		LoadTxBatchSize:   manifest.LoadTxBatchSize,
-		LoadTxConnections: manifest.LoadTxConnections,
-		ABCIProtocol:      manifest.ABCIProtocol,
-		UpgradeVersion:    manifest.UpgradeVersion,
-		Prometheus:        manifest.Prometheus,
+		Name:                 filepath.Base(dir),
+		File:                 fname,
+		Dir:                  dir,
+		IP:                   ipNet,
+		InitialHeight:        1,
+		InitialState:         manifest.InitialState,
+		Validators:           map[*Node]int64{},
+		ValidatorUpdates:     map[int64]map[*Node]int64{},
+		Nodes:                []*Node{},
+		Evidence:             manifest.Evidence,
+		LoadTxSizeBytes:      manifest.LoadTxSizeBytes,
+		LoadTxBatchSize:      manifest.LoadTxBatchSize,
+		LoadTxConnections:    manifest.LoadTxConnections,
+		ABCIProtocol:         manifest.ABCIProtocol,
+		PrepareProposalDelay: manifest.PrepareProposalDelay,
+		ProcessProposalDelay: manifest.ProcessProposalDelay,
+		CheckTxDelay:         manifest.CheckTxDelay,
 	}
 	if len(manifest.KeyType) != 0 {
 		testnet.KeyType = manifest.KeyType
@@ -145,9 +146,6 @@ func LoadTestnet(manifest Manifest, fname string, ifd InfrastructureData) (*Test
 	}
 	if testnet.ABCIProtocol == "" {
 		testnet.ABCIProtocol = string(ProtocolBuiltin)
-	}
-	if testnet.UpgradeVersion == "" {
-		testnet.UpgradeVersion = localVersion
 	}
 	if testnet.LoadTxConnections == 0 {
 		testnet.LoadTxConnections = defaultConnections
@@ -170,13 +168,12 @@ func LoadTestnet(manifest Manifest, fname string, ifd InfrastructureData) (*Test
 		nodeManifest := manifest.Nodes[name]
 		ind, ok := ifd.Instances[name]
 		if !ok {
-			return nil, fmt.Errorf("information for node '%s' missing from infrastructure data", name)
+			return nil, fmt.Errorf("information for node '%s' missing from infrastucture data", name)
 		}
 		v := nodeManifest.Version
 		if v == "" {
-			v = localVersion
+			v = "local-version"
 		}
-
 		node := &Node{
 			Name:             name,
 			Version:          v,
@@ -190,16 +187,14 @@ func LoadTestnet(manifest Manifest, fname string, ifd InfrastructureData) (*Test
 			ABCIProtocol:     Protocol(testnet.ABCIProtocol),
 			PrivvalProtocol:  ProtocolFile,
 			StartAt:          nodeManifest.StartAt,
-			FastSync:         nodeManifest.FastSync,
+			BlockSync:        nodeManifest.BlockSync,
 			Mempool:          nodeManifest.Mempool,
 			StateSync:        nodeManifest.StateSync,
 			PersistInterval:  1,
 			SnapshotInterval: nodeManifest.SnapshotInterval,
 			RetainBlocks:     nodeManifest.RetainBlocks,
 			Perturbations:    []Perturbation{},
-			Misbehaviors:     make(map[int64]string),
 			SendNoLoad:       nodeManifest.SendNoLoad,
-			Prometheus:       testnet.Prometheus,
 		}
 		if node.StartAt == testnet.InitialHeight {
 			node.StartAt = 0 // normalize to 0 for initial nodes, since code expects this
@@ -219,18 +214,8 @@ func LoadTestnet(manifest Manifest, fname string, ifd InfrastructureData) (*Test
 		if nodeManifest.PersistInterval != nil {
 			node.PersistInterval = *nodeManifest.PersistInterval
 		}
-		if node.Prometheus {
-			node.PrometheusProxyPort = prometheusProxyPortGen.Next()
-		}
 		for _, p := range nodeManifest.Perturb {
 			node.Perturbations = append(node.Perturbations, Perturbation(p))
-		}
-		for heightString, misbehavior := range nodeManifest.Misbehaviors {
-			height, err := strconv.ParseInt(heightString, 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("unable to parse height %s to int64: %w", heightString, err)
-			}
-			node.Misbehaviors[height] = misbehavior
 		}
 		testnet.Nodes = append(testnet.Nodes, node)
 	}
@@ -335,30 +320,20 @@ func (n Node) Validate(testnet Testnet) error {
 	if !testnet.IP.Contains(n.IP) {
 		return fmt.Errorf("node IP %v is not in testnet network %v", n.IP, testnet.IP)
 	}
-	if n.ProxyPort == n.PrometheusProxyPort {
-		return fmt.Errorf("node local port %v used also for Prometheus local port", n.ProxyPort)
-	}
-	if n.ProxyPort > 0 && n.ProxyPort <= 1024 {
-		return fmt.Errorf("local port %v must be >1024", n.ProxyPort)
-	}
-	if n.PrometheusProxyPort > 0 && n.PrometheusProxyPort <= 1024 {
-		return fmt.Errorf("local port %v must be >1024", n.PrometheusProxyPort)
-	}
-	for _, peer := range testnet.Nodes {
-		if peer.Name != n.Name && peer.ProxyPort == n.ProxyPort {
-			return fmt.Errorf("peer %q also has local port %v", peer.Name, n.ProxyPort)
+	if n.ProxyPort > 0 {
+		if n.ProxyPort <= 1024 {
+			return fmt.Errorf("local port %v must be >1024", n.ProxyPort)
 		}
-		if n.PrometheusProxyPort > 0 {
-			if peer.Name != n.Name && peer.PrometheusProxyPort == n.PrometheusProxyPort {
-				return fmt.Errorf("peer %q also has local port %v", peer.Name, n.PrometheusProxyPort)
+		for _, peer := range testnet.Nodes {
+			if peer.Name != n.Name && peer.ProxyPort == n.ProxyPort {
+				return fmt.Errorf("peer %q also has local port %v", peer.Name, n.ProxyPort)
 			}
 		}
 	}
-	switch n.FastSync {
-	case "", "v0", "v1", "v2":
+	switch n.BlockSync {
+	case "", "v0":
 	default:
-		return fmt.Errorf("invalid fast sync setting %q", n.FastSync)
-
+		return fmt.Errorf("invalid block sync setting %q", n.BlockSync)
 	}
 	switch n.Mempool {
 	case "", "v0", "v1":
@@ -371,11 +346,11 @@ func (n Node) Validate(testnet Testnet) error {
 		return fmt.Errorf("invalid database setting %q", n.Database)
 	}
 	switch n.ABCIProtocol {
-	case ProtocolBuiltin, ProtocolUNIX, ProtocolTCP, ProtocolGRPC:
+	case ProtocolBuiltin, ProtocolBuiltinUnsync, ProtocolUNIX, ProtocolTCP, ProtocolGRPC:
 	default:
 		return fmt.Errorf("invalid ABCI protocol setting %q", n.ABCIProtocol)
 	}
-	if n.Mode == ModeLight && n.ABCIProtocol != ProtocolBuiltin {
+	if n.Mode == ModeLight && n.ABCIProtocol != ProtocolBuiltin && n.ABCIProtocol != ProtocolBuiltinUnsync {
 		return errors.New("light client must use builtin protocol")
 	}
 	switch n.PrivvalProtocol {
@@ -391,6 +366,10 @@ func (n Node) Validate(testnet Testnet) error {
 	if n.StateSync && n.StartAt == 0 {
 		return errors.New("state synced nodes cannot start at the initial height")
 	}
+	if n.RetainBlocks != 0 && n.RetainBlocks < uint64(EvidenceAgeHeight) {
+		return fmt.Errorf("retain_blocks must be greater or equal to max evidence age (%d)",
+			EvidenceAgeHeight)
+	}
 	if n.PersistInterval == 0 && n.RetainBlocks > 0 {
 		return errors.New("persist_interval=0 requires retain_blocks=0")
 	}
@@ -401,41 +380,11 @@ func (n Node) Validate(testnet Testnet) error {
 		return errors.New("snapshot_interval must be less than er equal to retain_blocks")
 	}
 
-	var upgradeFound bool
 	for _, perturbation := range n.Perturbations {
 		switch perturbation {
-		case PerturbationUpgrade:
-			if upgradeFound {
-				return fmt.Errorf("'upgrade' perturbation can appear at most once per node")
-			}
-			upgradeFound = true
 		case PerturbationDisconnect, PerturbationKill, PerturbationPause, PerturbationRestart:
 		default:
 			return fmt.Errorf("invalid perturbation %q", perturbation)
-		}
-	}
-
-	if (n.PrivvalProtocol != "file" || n.Mode != "validator") && len(n.Misbehaviors) != 0 {
-		return errors.New("must be using \"file\" privval protocol to implement misbehaviors")
-	}
-
-	for height, misbehavior := range n.Misbehaviors {
-		if height < n.StartAt {
-			return fmt.Errorf("misbehavior height %d is below node start height %d",
-				height, n.StartAt)
-		}
-		if height < testnet.InitialHeight {
-			return fmt.Errorf("misbehavior height %d is below network initial height %d",
-				height, testnet.InitialHeight)
-		}
-		exists := false
-		for possibleBehaviors := range mcs.MisbehaviorList {
-			if possibleBehaviors == misbehavior {
-				exists = true
-			}
-		}
-		if !exists {
-			return fmt.Errorf("misbehavior %s does not exist", misbehavior)
 		}
 	}
 
@@ -468,8 +417,7 @@ func (t Testnet) ArchiveNodes() []*Node {
 // RandomNode returns a random non-seed node.
 func (t Testnet) RandomNode() *Node {
 	for {
-		//nolint:gosec // G404: Use of weak random number generator (math/rand instead of crypto/rand)
-		node := t.Nodes[rand.Intn(len(t.Nodes))]
+		node := t.Nodes[rand.Intn(len(t.Nodes))] //nolint:gosec
 		if node.Mode != ModeSeed {
 			return node
 		}
@@ -489,19 +437,6 @@ func (t Testnet) HasPerturbations() bool {
 		}
 	}
 	return false
-}
-
-// LastMisbehaviorHeight returns the height of the last misbehavior.
-func (t Testnet) LastMisbehaviorHeight() int64 {
-	lastHeight := int64(0)
-	for _, node := range t.Nodes {
-		for height := range node.Misbehaviors {
-			if height > lastHeight {
-				lastHeight = height
-			}
-		}
-	}
-	return lastHeight
 }
 
 // Address returns a P2P endpoint address for the node.

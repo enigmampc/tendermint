@@ -6,11 +6,11 @@ import (
 	"regexp"
 	"strconv"
 
-	dbm "github.com/cometbft/cometbft-db"
+	dbm "github.com/tendermint/tm-db"
 
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	"github.com/tendermint/tendermint/light/store"
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	"github.com/tendermint/tendermint/types"
 )
 
@@ -22,7 +22,7 @@ type dbs struct {
 	db     dbm.DB
 	prefix string
 
-	mtx  cmtsync.RWMutex
+	mtx  tmsync.RWMutex
 	size uint16
 }
 
@@ -120,7 +120,7 @@ func (s *dbs) LightBlock(height int64) (*types.LightBlock, error) {
 		return nil, store.ErrLightBlockNotFound
 	}
 
-	var lbpb cmtproto.LightBlock
+	var lbpb tmproto.LightBlock
 	err = lbpb.Unmarshal(bz)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal error: %w", err)

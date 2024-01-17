@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/tendermint/tendermint/libs/log"
-	cmtmath "github.com/tendermint/tendermint/libs/math"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmmath "github.com/tendermint/tendermint/libs/math"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	"github.com/tendermint/tendermint/light/provider"
 	"github.com/tendermint/tendermint/light/store"
 	"github.com/tendermint/tendermint/types"
@@ -62,7 +62,7 @@ func SequentialVerification() Option {
 // which must sign the new header in order for us to trust it. NOTE this only
 // applies to non-adjacent headers. For adjacent headers, sequential
 // verification is used.
-func SkippingVerification(trustLevel cmtmath.Fraction) Option {
+func SkippingVerification(trustLevel tmmath.Fraction) Option {
 	return func(c *Client) {
 		c.verificationMode = skipping
 		c.trustLevel = trustLevel
@@ -134,13 +134,13 @@ type Client struct {
 	chainID          string
 	trustingPeriod   time.Duration // see TrustOptions.Period
 	verificationMode mode
-	trustLevel       cmtmath.Fraction
+	trustLevel       tmmath.Fraction
 	maxRetryAttempts uint16 // see MaxRetryAttempts option
 	maxClockDrift    time.Duration
 	maxBlockLag      time.Duration
 
 	// Mutex for locking during changes of the light clients providers
-	providerMutex cmtsync.Mutex
+	providerMutex tmsync.Mutex
 	// Primary provider of new headers.
 	primary provider.Provider
 	// Providers used to "witness" new headers.
@@ -506,7 +506,7 @@ func (c *Client) VerifyLightBlockAtHeight(ctx context.Context, height int64, now
 // headers are not adjacent, verifySkipping is performed and necessary (not all)
 // intermediate headers will be requested. See the specification for details.
 // Intermediate headers are not saved to database.
-// https://github.com/tendermint/tendermint/blob/v0.34.x/spec/consensus/light-client.md
+// https://github.com/tendermint/tendermint/blob/main/spec/consensus/light-client.md
 //
 // If the header, which is older than the currently trusted header, is
 // requested and the light client does not have it, VerifyHeader will perform:

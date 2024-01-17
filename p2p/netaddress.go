@@ -1,4 +1,4 @@
-// Modified for CometBFT
+// Modified for Tendermint
 // Originally Copyright (c) 2013-2014 Conformal Systems LLC.
 // https://github.com/conformal/btcd/blob/master/LICENSE
 
@@ -329,7 +329,7 @@ func (na *NetAddress) ReachabilityTo(o *NetAddress) int {
 		case o.IP.To4() != nil:
 			return Ipv4
 		case tunneled:
-			// only prioritise ipv6 if we aren't tunnelling it.
+			// only prioritize ipv6 if we aren't tunneling it.
 			return Ipv6Weak
 		}
 		return Ipv6Strong

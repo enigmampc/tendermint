@@ -5,19 +5,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/tendermint/tendermint/crypto/tmhash"
 	"github.com/tendermint/tendermint/libs/protoio"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 )
 
 var (
 	testProposal *Proposal
-	pbp          *cmtproto.Proposal
+	pbp          *tmproto.Proposal
 )
 
 func init() {
@@ -61,7 +61,7 @@ func TestProposalVerifySignature(t *testing.T) {
 
 	prop := NewProposal(
 		4, 2, 2,
-		BlockID{cmtrand.Bytes(tmhash.Size), PartSetHeader{777, cmtrand.Bytes(tmhash.Size)}})
+		BlockID{tmrand.Bytes(tmhash.Size), PartSetHeader{777, tmrand.Bytes(tmhash.Size)}})
 	p := prop.ToProto()
 	signBytes := ProposalSignBytes("test_chain_id", p)
 
@@ -75,7 +75,7 @@ func TestProposalVerifySignature(t *testing.T) {
 	require.True(t, valid)
 
 	// serialize, deserialize and verify again....
-	newProp := new(cmtproto.Proposal)
+	newProp := new(tmproto.Proposal)
 	pb := prop.ToProto()
 
 	bs, err := proto.Marshal(pb)
@@ -131,7 +131,7 @@ func TestProposalValidateBasic(t *testing.T) {
 		expectErr        bool
 	}{
 		{"Good Proposal", func(p *Proposal) {}, false},
-		{"Invalid Type", func(p *Proposal) { p.Type = cmtproto.PrecommitType }, true},
+		{"Invalid Type", func(p *Proposal) { p.Type = tmproto.PrecommitType }, true},
 		{"Invalid Height", func(p *Proposal) { p.Height = -1 }, true},
 		{"Invalid Round", func(p *Proposal) { p.Round = -1 }, true},
 		{"Invalid POLRound", func(p *Proposal) { p.POLRound = -2 }, true},

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	cmtpubsub "github.com/tendermint/tendermint/libs/pubsub"
-	cmtquery "github.com/tendermint/tendermint/libs/pubsub/query"
+	tmpubsub "github.com/tendermint/tendermint/libs/pubsub"
+	tmquery "github.com/tendermint/tendermint/libs/pubsub/query"
 	ctypes "github.com/tendermint/tendermint/rpc/core/types"
 	rpctypes "github.com/tendermint/tendermint/rpc/jsonrpc/types"
 )
@@ -19,8 +19,8 @@ const (
 )
 
 // Subscribe for events via WebSocket.
-// More: https://docs.cometbft.com/v0.34/rpc/#/Websocket/subscribe
-func Subscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultSubscribe, error) {
+// More: https://docs.tendermint.com/master/rpc/#/Websocket/subscribe
+func (env *Environment) Subscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultSubscribe, error) {
 	addr := ctx.RemoteAddr()
 
 	if env.EventBus.NumClients() >= env.Config.MaxSubscriptionClients {
@@ -33,7 +33,7 @@ func Subscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultSubscribe, er
 
 	env.Logger.Info("Subscribe to query", "remote", addr, "query", query)
 
-	q, err := cmtquery.New(query)
+	q, err := tmquery.New(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse query: %w", err)
 	}
@@ -66,7 +66,7 @@ func Subscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultSubscribe, er
 
 					if closeIfSlow {
 						var (
-							err  = errors.New("subscription was cancelled (reason: slow client)")
+							err  = errors.New("subscription was canceled (reason: slow client)")
 							resp = rpctypes.RPCServerError(subscriptionID, err)
 						)
 						if !ctx.WSConn.TryWriteRPCResponse(resp) {
@@ -76,16 +76,16 @@ func Subscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultSubscribe, er
 						return
 					}
 				}
-			case <-sub.Cancelled():
-				if sub.Err() != cmtpubsub.ErrUnsubscribed {
+			case <-sub.Canceled():
+				if sub.Err() != tmpubsub.ErrUnsubscribed {
 					var reason string
 					if sub.Err() == nil {
-						reason = "CometBFT exited"
+						reason = "Tendermint exited"
 					} else {
 						reason = sub.Err().Error()
 					}
 					var (
-						err  = fmt.Errorf("subscription was cancelled (reason: %s)", reason)
+						err  = fmt.Errorf("subscription was canceled (reason: %s)", reason)
 						resp = rpctypes.RPCServerError(subscriptionID, err)
 					)
 					if !ctx.WSConn.TryWriteRPCResponse(resp) {
@@ -102,11 +102,11 @@ func Subscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultSubscribe, er
 }
 
 // Unsubscribe from events via WebSocket.
-// More: https://docs.cometbft.com/v0.34/rpc/#/Websocket/unsubscribe
-func Unsubscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultUnsubscribe, error) {
+// More: https://docs.tendermint.com/master/rpc/#/Websocket/unsubscribe
+func (env *Environment) Unsubscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultUnsubscribe, error) {
 	addr := ctx.RemoteAddr()
 	env.Logger.Info("Unsubscribe from query", "remote", addr, "query", query)
-	q, err := cmtquery.New(query)
+	q, err := tmquery.New(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse query: %w", err)
 	}
@@ -118,8 +118,8 @@ func Unsubscribe(ctx *rpctypes.Context, query string) (*ctypes.ResultUnsubscribe
 }
 
 // UnsubscribeAll from all events via WebSocket.
-// More: https://docs.cometbft.com/v0.34/rpc/#/Websocket/unsubscribe_all
-func UnsubscribeAll(ctx *rpctypes.Context) (*ctypes.ResultUnsubscribe, error) {
+// More: https://docs.tendermint.com/master/rpc/#/Websocket/unsubscribe_all
+func (env *Environment) UnsubscribeAll(ctx *rpctypes.Context) (*ctypes.ResultUnsubscribe, error) {
 	addr := ctx.RemoteAddr()
 	env.Logger.Info("Unsubscribe from all", "remote", addr)
 	err := env.EventBus.UnsubscribeAll(context.Background(), addr)

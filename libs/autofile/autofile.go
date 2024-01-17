@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
 )
 
 /* AutoFile usage
@@ -64,7 +64,7 @@ func OpenAutoFile(path string) (*AutoFile, error) {
 		return nil, err
 	}
 	af := &AutoFile{
-		ID:               cmtrand.Str(12) + ":" + path,
+		ID:               tmrand.Str(12) + ":" + path,
 		Path:             path,
 		closeTicker:      time.NewTicker(autoFileClosePeriod),
 		closeTickerStopc: make(chan struct{}),

@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"github.com/tendermint/tendermint/libs/log"
-	cmtpubsub "github.com/tendermint/tendermint/libs/pubsub"
+	tmpubsub "github.com/tendermint/tendermint/libs/pubsub"
 	"github.com/tendermint/tendermint/light"
 	lrpc "github.com/tendermint/tendermint/light/rpc"
 	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
@@ -96,7 +96,7 @@ func (p *Proxy) listen() (net.Listener, *http.ServeMux, error) {
 	wm := rpcserver.NewWebsocketManager(r,
 		rpcserver.OnDisconnect(func(remoteAddr string) {
 			err := p.Client.UnsubscribeAll(context.Background(), remoteAddr)
-			if err != nil && err != cmtpubsub.ErrSubscriptionNotFound {
+			if err != nil && err != tmpubsub.ErrSubscriptionNotFound {
 				wmLogger.Error("Failed to unsubscribe addr from events", "addr", remoteAddr, "err", err)
 			}
 		}),
@@ -113,7 +113,7 @@ func (p *Proxy) listen() (net.Listener, *http.ServeMux, error) {
 	}
 
 	// 4) Start listening for new connections.
-	listener, err := rpcserver.Listen(p.Addr, p.Config)
+	listener, err := rpcserver.Listen(p.Addr, p.Config.MaxOpenConnections)
 	if err != nil {
 		return nil, mux, err
 	}

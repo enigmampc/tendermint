@@ -10,9 +10,9 @@ import (
 
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/tmhash"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
-	cmtversion "github.com/tendermint/tendermint/proto/tendermint/version"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	tmversion "github.com/tendermint/tendermint/proto/tendermint/version"
 	"github.com/tendermint/tendermint/version"
 )
 
@@ -43,7 +43,8 @@ func randomDuplicateVoteEvidence(t *testing.T) *DuplicateVoteEvidence {
 
 func TestDuplicateVoteEvidence(t *testing.T) {
 	const height = int64(13)
-	ev := NewMockDuplicateVoteEvidence(height, time.Now(), "mock-chain-id")
+	ev, err := NewMockDuplicateVoteEvidence(height, time.Now(), "mock-chain-id")
+	require.NoError(t, err)
 	assert.Equal(t, ev.Hash(), tmhash.Sum(ev.Bytes()))
 	assert.NotNil(t, ev.String())
 	assert.Equal(t, ev.Height(), height)
@@ -82,7 +83,8 @@ func TestDuplicateVoteEvidenceValidation(t *testing.T) {
 			vote1 := makeVote(t, val, chainID, math.MaxInt32, math.MaxInt64, math.MaxInt32, 0x02, blockID, defaultVoteTime)
 			vote2 := makeVote(t, val, chainID, math.MaxInt32, math.MaxInt64, math.MaxInt32, 0x02, blockID2, defaultVoteTime)
 			valSet := NewValidatorSet([]*Validator{val.ExtractIntoValidator(10)})
-			ev := NewDuplicateVoteEvidence(vote1, vote2, defaultVoteTime, valSet)
+			ev, err := NewDuplicateVoteEvidence(vote1, vote2, defaultVoteTime, valSet)
+			require.NoError(t, err)
 			tc.malleateEvidence(ev)
 			assert.Equal(t, tc.expectErr, ev.ValidateBasic() != nil, "Validate Basic had an unexpected result")
 		})
@@ -93,7 +95,7 @@ func TestLightClientAttackEvidenceBasic(t *testing.T) {
 	height := int64(5)
 	commonHeight := height - 1
 	nValidators := 10
-	voteSet, valSet, privVals := randVoteSet(height, 1, cmtproto.PrecommitType, nValidators, 1)
+	voteSet, valSet, privVals := randVoteSet(height, 1, tmproto.PrecommitType, nValidators, 1)
 	header := makeHeaderRandom()
 	header.Height = height
 	blockID := makeBlockID(tmhash.Sum([]byte("blockhash")), math.MaxInt32, tmhash.Sum([]byte("partshash")))
@@ -152,7 +154,7 @@ func TestLightClientAttackEvidenceValidation(t *testing.T) {
 	height := int64(5)
 	commonHeight := height - 1
 	nValidators := 10
-	voteSet, valSet, privVals := randVoteSet(height, 1, cmtproto.PrecommitType, nValidators, 1)
+	voteSet, valSet, privVals := randVoteSet(height, 1, tmproto.PrecommitType, nValidators, 1)
 	header := makeHeaderRandom()
 	header.Height = height
 	header.ValidatorsHash = valSet.Hash()
@@ -224,7 +226,8 @@ func TestLightClientAttackEvidenceValidation(t *testing.T) {
 }
 
 func TestMockEvidenceValidateBasic(t *testing.T) {
-	goodEvidence := NewMockDuplicateVoteEvidence(int64(1), time.Now(), "mock-chain-id")
+	goodEvidence, err := NewMockDuplicateVoteEvidence(int64(1), time.Now(), "mock-chain-id")
+	require.NoError(t, err)
 	assert.Nil(t, goodEvidence.ValidateBasic())
 }
 
@@ -238,25 +241,24 @@ func makeVote(
 		ValidatorIndex:   valIndex,
 		Height:           height,
 		Round:            round,
-		Type:             cmtproto.SignedMsgType(step),
+		Type:             tmproto.SignedMsgType(step),
 		BlockID:          blockID,
 		Timestamp:        time,
 	}
 
 	vpb := v.ToProto()
 	err = val.SignVote(chainID, vpb)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
+
 	v.Signature = vpb.Signature
 	return v
 }
 
 func makeHeaderRandom() *Header {
 	return &Header{
-		Version:            cmtversion.Consensus{Block: version.BlockProtocol, App: 1},
-		ChainID:            cmtrand.Str(12),
-		Height:             int64(cmtrand.Uint16()) + 1,
+		Version:            tmversion.Consensus{Block: version.BlockProtocol, App: 1},
+		ChainID:            tmrand.Str(12),
+		Height:             int64(tmrand.Uint16()) + 1,
 		Time:               time.Now(),
 		LastBlockID:        makeBlockIDRandom(),
 		LastCommitHash:     crypto.CRandBytes(tmhash.Size),

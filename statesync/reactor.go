@@ -5,11 +5,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
-
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/config"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	"github.com/tendermint/tendermint/p2p"
 	ssproto "github.com/tendermint/tendermint/proto/tendermint/statesync"
 	"github.com/tendermint/tendermint/proxy"
@@ -35,10 +33,11 @@ type Reactor struct {
 	conn      proxy.AppConnSnapshot
 	connQuery proxy.AppConnQuery
 	tempDir   string
+	metrics   *Metrics
 
 	// This will only be set when a state sync is in progress. It is used to feed received
 	// snapshots and chunks into the sync.
-	mtx    cmtsync.RWMutex
+	mtx    tmsync.RWMutex
 	syncer *syncer
 }
 
@@ -48,12 +47,14 @@ func NewReactor(
 	conn proxy.AppConnSnapshot,
 	connQuery proxy.AppConnQuery,
 	tempDir string,
+	metrics *Metrics,
 ) *Reactor {
 
 	r := &Reactor{
 		cfg:       cfg,
 		conn:      conn,
 		connQuery: connQuery,
+		metrics:   metrics,
 	}
 	r.BaseReactor = *p2p.NewBaseReactor("StateSync", r)
 
@@ -104,7 +105,7 @@ func (r *Reactor) RemovePeer(peer p2p.Peer, reason interface{}) {
 }
 
 // Receive implements p2p.Reactor.
-func (r *Reactor) ReceiveEnvelope(e p2p.Envelope) {
+func (r *Reactor) Receive(e p2p.Envelope) {
 	if !r.IsRunning() {
 		return
 	}
@@ -128,7 +129,7 @@ func (r *Reactor) ReceiveEnvelope(e p2p.Envelope) {
 			for _, snapshot := range snapshots {
 				r.Logger.Debug("Advertising snapshot", "height", snapshot.Height,
 					"format", snapshot.Format, "peer", e.Src.ID())
-				p2p.SendEnvelopeShim(e.Src, p2p.Envelope{ //nolint: staticcheck
+				e.Src.Send(p2p.Envelope{
 					ChannelID: e.ChannelID,
 					Message: &ssproto.SnapshotsResponse{
 						Height:   snapshot.Height,
@@ -137,7 +138,7 @@ func (r *Reactor) ReceiveEnvelope(e p2p.Envelope) {
 						Hash:     snapshot.Hash,
 						Metadata: snapshot.Metadata,
 					},
-				}, r.Logger)
+				})
 			}
 
 		case *ssproto.SnapshotsResponse:
@@ -183,7 +184,7 @@ func (r *Reactor) ReceiveEnvelope(e p2p.Envelope) {
 			}
 			r.Logger.Debug("Sending chunk", "height", msg.Height, "format", msg.Format,
 				"chunk", msg.Index, "peer", e.Src.ID())
-			p2p.SendEnvelopeShim(e.Src, p2p.Envelope{ //nolint: staticcheck
+			e.Src.Send(p2p.Envelope{
 				ChannelID: ChunkChannel,
 				Message: &ssproto.ChunkResponse{
 					Height:  msg.Height,
@@ -192,7 +193,7 @@ func (r *Reactor) ReceiveEnvelope(e p2p.Envelope) {
 					Chunk:   resp.Chunk,
 					Missing: resp.Chunk == nil,
 				},
-			}, r.Logger)
+			})
 
 		case *ssproto.ChunkResponse:
 			r.mtx.RLock()
@@ -223,24 +224,6 @@ func (r *Reactor) ReceiveEnvelope(e p2p.Envelope) {
 	default:
 		r.Logger.Error("Received message on invalid channel %x", e.ChannelID)
 	}
-}
-
-func (r *Reactor) Receive(chID byte, peer p2p.Peer, msgBytes []byte) {
-	msg := &ssproto.Message{}
-	err := proto.Unmarshal(msgBytes, msg)
-	if err != nil {
-		panic(err)
-	}
-	um, err := msg.Unwrap()
-	if err != nil {
-		panic(err)
-	}
-
-	r.ReceiveEnvelope(p2p.Envelope{
-		ChannelID: chID,
-		Src:       peer,
-		Message:   um,
-	})
 }
 
 // recentSnapshots fetches the n most recent snapshots from the app
@@ -285,6 +268,7 @@ func (r *Reactor) Sync(stateProvider StateProvider, discoveryTime time.Duration)
 		r.mtx.Unlock()
 		return sm.State{}, nil, errors.New("a state sync is already in progress")
 	}
+	r.metrics.Syncing.Set(1)
 	r.syncer = newSyncer(r.cfg, r.Logger, r.conn, r.connQuery, stateProvider, r.tempDir)
 	r.mtx.Unlock()
 
@@ -292,7 +276,7 @@ func (r *Reactor) Sync(stateProvider StateProvider, discoveryTime time.Duration)
 		r.Logger.Debug("Requesting snapshots from known peers")
 		// Request snapshots from all currently connected peers
 
-		r.Switch.BroadcastEnvelope(p2p.Envelope{
+		r.Switch.Broadcast(p2p.Envelope{
 			ChannelID: SnapshotChannel,
 			Message:   &ssproto.SnapshotsRequest{},
 		})
@@ -304,6 +288,7 @@ func (r *Reactor) Sync(stateProvider StateProvider, discoveryTime time.Duration)
 
 	r.mtx.Lock()
 	r.syncer = nil
+	r.metrics.Syncing.Set(0)
 	r.mtx.Unlock()
 	return state, commit, err
 }

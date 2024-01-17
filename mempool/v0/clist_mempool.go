@@ -10,8 +10,8 @@ import (
 	"github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/libs/clist"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtmath "github.com/tendermint/tendermint/libs/math"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmmath "github.com/tendermint/tendermint/libs/math"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	"github.com/tendermint/tendermint/mempool"
 	"github.com/tendermint/tendermint/p2p"
 	"github.com/tendermint/tendermint/proxy"
@@ -36,7 +36,7 @@ type CListMempool struct {
 
 	// Exclusive mutex for Update method to prevent concurrent execution of
 	// CheckTx or ReapMaxBytesMaxGas(ReapMaxTxs) methods.
-	updateMtx cmtsync.RWMutex
+	updateMtx tmsync.RWMutex
 	preCheck  mempool.PreCheckFunc
 	postCheck mempool.PostCheckFunc
 
@@ -391,20 +391,6 @@ func (mem *CListMempool) resCbFirstTime(
 				return
 			}
 
-			// Check transaction not already in the mempool
-			if e, ok := mem.txsMap.Load(types.Tx(tx).Key()); ok {
-				memTx := e.(*clist.CElement).Value.(*mempoolTx)
-				memTx.senders.LoadOrStore(peerID, true)
-				mem.logger.Debug(
-					"transaction already there, not adding it again",
-					"tx", types.Tx(tx).Hash(),
-					"res", r,
-					"height", mem.height,
-					"total", mem.Size(),
-				)
-				return
-			}
-
 			memTx := &mempoolTx{
 				height:    mem.height,
 				gasWanted: r.CheckTx.GasWanted,
@@ -543,7 +529,7 @@ func (mem *CListMempool) ReapMaxBytesMaxGas(maxBytes, maxGas int64) types.Txs {
 
 	// TODO: we will get a performance boost if we have a good estimate of avg
 	// size per tx, and set the initial capacity based off of that.
-	// txs := make([]types.Tx, 0, cmtmath.MinInt(mem.txs.Len(), max/mem.avgTxSize))
+	// txs := make([]types.Tx, 0, tmmath.MinInt(mem.txs.Len(), max/mem.avgTxSize))
 	txs := make([]types.Tx, 0, mem.txs.Len())
 	for e := mem.txs.Front(); e != nil; e = e.Next() {
 		memTx := e.Value.(*mempoolTx)
@@ -581,7 +567,7 @@ func (mem *CListMempool) ReapMaxTxs(max int) types.Txs {
 		max = mem.txs.Len()
 	}
 
-	txs := make([]types.Tx, 0, cmtmath.MinInt(mem.txs.Len(), max))
+	txs := make([]types.Tx, 0, tmmath.MinInt(mem.txs.Len(), max))
 	for e := mem.txs.Front(); e != nil && len(txs) <= max; e = e.Next() {
 		memTx := e.Value.(*mempoolTx)
 		txs = append(txs, memTx.tx)

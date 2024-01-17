@@ -454,7 +454,7 @@ func (txmp *TxMempool) addNewTransaction(wtx *WrappedTx, checkTxRes *abci.Respon
 	}
 
 	if err != nil || checkTxRes.Code != abci.CodeTypeOK {
-		txmp.logger.Debug(
+		txmp.logger.Info(
 			"rejected bad transaction",
 			"priority", wtx.Priority(),
 			"tx", fmt.Sprintf("%X", wtx.tx.Hash()),

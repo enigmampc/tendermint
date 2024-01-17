@@ -8,12 +8,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log/term"
-	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/tendermint/tendermint/abci/example/kvstore"
-	"github.com/tendermint/tendermint/p2p/mock"
+	"github.com/tendermint/tendermint/internal/test"
 
 	cfg "github.com/tendermint/tendermint/config"
 
@@ -95,35 +94,6 @@ func TestMempoolVectors(t *testing.T) {
 	}
 }
 
-func TestLegacyReactorReceiveBasic(t *testing.T) {
-	config := cfg.TestConfig()
-	// if there were more than two reactors, the order of transactions could not be
-	// asserted in waitForTxsOnReactors (due to transactions gossiping). If we
-	// replace Connect2Switches (full mesh) with a func, which connects first
-	// reactor to others and nothing else, this test should also pass with >2 reactors.
-	const N = 1
-	reactors := makeAndConnectReactors(config, N)
-	var (
-		reactor = reactors[0]
-		peer    = mock.NewPeer(nil)
-	)
-	defer func() {
-		err := reactor.Stop()
-		assert.NoError(t, err)
-	}()
-
-	reactor.InitPeer(peer)
-	reactor.AddPeer(peer)
-	m := &memproto.Txs{}
-	wm := m.Wrap()
-	msg, err := proto.Marshal(wm)
-	assert.NoError(t, err)
-
-	assert.NotPanics(t, func() {
-		reactor.Receive(mempool.MempoolChannel, peer, msg)
-	})
-}
-
 func makeAndConnectReactors(config *cfg.Config, n int) []*Reactor {
 	reactors := make([]*Reactor, n)
 	logger := mempoolLogger()
@@ -159,7 +129,7 @@ func mempoolLogger() log.Logger {
 }
 
 func newMempoolWithApp(cc proxy.ClientCreator) (*TxMempool, func()) {
-	conf := cfg.ResetTestRoot("mempool_test")
+	conf := test.ResetTestRoot("mempool_test")
 
 	mp, cu := newMempoolWithAppAndConfig(cc, conf)
 	return mp, cu

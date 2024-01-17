@@ -28,7 +28,7 @@ func TestAppConns_Start_Stop(t *testing.T) {
 
 	clientCreatorMock.On("NewABCIClient").Return(clientMock, nil).Times(4)
 
-	appConns := NewAppConns(clientCreatorMock)
+	appConns := NewAppConns(clientCreatorMock, NopMetrics())
 
 	err := appConns.Start()
 	require.NoError(t, err)
@@ -41,7 +41,7 @@ func TestAppConns_Start_Stop(t *testing.T) {
 	clientMock.AssertExpectations(t)
 }
 
-// Upon failure, we call cmtos.Kill
+// Upon failure, we call tmos.Kill
 func TestAppConns_Failure(t *testing.T) {
 	ok := make(chan struct{})
 	c := make(chan os.Signal, 1)
@@ -68,7 +68,7 @@ func TestAppConns_Failure(t *testing.T) {
 
 	clientCreatorMock.On("NewABCIClient").Return(clientMock, nil)
 
-	appConns := NewAppConns(clientCreatorMock)
+	appConns := NewAppConns(clientCreatorMock, NopMetrics())
 
 	err := appConns.Start()
 	require.NoError(t, err)

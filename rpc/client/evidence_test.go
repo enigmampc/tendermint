@@ -13,9 +13,10 @@ import (
 	"github.com/tendermint/tendermint/crypto/ed25519"
 	cryptoenc "github.com/tendermint/tendermint/crypto/encoding"
 	"github.com/tendermint/tendermint/crypto/tmhash"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
+	"github.com/tendermint/tendermint/internal/test"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
 	"github.com/tendermint/tendermint/privval"
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	"github.com/tendermint/tendermint/rpc/client"
 	rpctest "github.com/tendermint/tendermint/rpc/test"
 	"github.com/tendermint/tendermint/types"
@@ -45,7 +46,9 @@ func newEvidence(t *testing.T, val *privval.FilePV,
 	validator := types.NewValidator(val.Key.PubKey, 10)
 	valSet := types.NewValidatorSet([]*types.Validator{validator})
 
-	return types.NewDuplicateVoteEvidence(vote, vote2, defaultTestTime, valSet)
+	ev, err := types.NewDuplicateVoteEvidence(vote, vote2, defaultTestTime, valSet)
+	require.NoError(t, err)
+	return ev
 }
 
 func makeEvidences(
@@ -58,10 +61,10 @@ func makeEvidences(
 		ValidatorIndex:   0,
 		Height:           1,
 		Round:            0,
-		Type:             cmtproto.PrevoteType,
+		Type:             tmproto.PrevoteType,
 		Timestamp:        defaultTestTime,
 		BlockID: types.BlockID{
-			Hash: tmhash.Sum(cmtrand.Bytes(tmhash.Size)),
+			Hash: tmhash.Sum(tmrand.Bytes(tmhash.Size)),
 			PartSetHeader: types.PartSetHeader{
 				Total: 1000,
 				Hash:  tmhash.Sum([]byte("partset")),
@@ -99,7 +102,7 @@ func makeEvidences(
 	// different type
 	{
 		v := vote2
-		v.Type = cmtproto.PrecommitType
+		v.Type = tmproto.PrecommitType
 		fakes = append(fakes, newEvidence(t, val, &vote, &v, chainID))
 	}
 
@@ -115,7 +118,7 @@ func makeEvidences(
 func TestBroadcastEvidence_DuplicateVoteEvidence(t *testing.T) {
 	var (
 		config  = rpctest.GetConfig()
-		chainID = config.ChainID()
+		chainID = test.DefaultTestChainID
 		pv      = privval.LoadOrGenFilePV(config.PrivValidatorKeyFile(), config.PrivValidatorStateFile())
 	)
 

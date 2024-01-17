@@ -1,7 +1,7 @@
 # Makefile for the "localnode" docker image.
 
 all:
-	docker build --tag cometbft/localnode localnode
+	docker build --tag tendermint/localnode localnode
 
 .PHONY: all
 

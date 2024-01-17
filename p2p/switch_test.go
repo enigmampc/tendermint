@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,12 +22,14 @@ import (
 	"github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/crypto/ed25519"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	"github.com/tendermint/tendermint/p2p/conn"
 	p2pproto "github.com/tendermint/tendermint/proto/tendermint/p2p"
 )
 
-var cfg *config.P2PConfig
+var (
+	cfg *config.P2PConfig
+)
 
 func init() {
 	cfg = config.DefaultP2PConfig()
@@ -43,7 +45,7 @@ type PeerMessage struct {
 type TestReactor struct {
 	BaseReactor
 
-	mtx          cmtsync.Mutex
+	mtx          tmsync.Mutex
 	channels     []*conn.ChannelDescriptor
 	logMessages  bool
 	msgsCounter  int
@@ -69,32 +71,14 @@ func (tr *TestReactor) AddPeer(peer Peer) {}
 
 func (tr *TestReactor) RemovePeer(peer Peer, reason interface{}) {}
 
-func (tr *TestReactor) ReceiveEnvelope(e Envelope) {
+func (tr *TestReactor) Receive(e Envelope) {
 	if tr.logMessages {
 		tr.mtx.Lock()
 		defer tr.mtx.Unlock()
-		// fmt.Printf("Received: %X, %X\n", e.ChannelID, e.Message)
+		fmt.Printf("Received: %X, %X\n", e.ChannelID, e.Message)
 		tr.msgsReceived[e.ChannelID] = append(tr.msgsReceived[e.ChannelID], PeerMessage{Contents: e.Message, Counter: tr.msgsCounter})
 		tr.msgsCounter++
 	}
-}
-
-func (tr *TestReactor) Receive(chID byte, peer Peer, msgBytes []byte) {
-	msg := &p2pproto.Message{}
-	err := proto.Unmarshal(msgBytes, msg)
-	if err != nil {
-		panic(err)
-	}
-	um, err := msg.Unwrap()
-	if err != nil {
-		panic(err)
-	}
-
-	tr.ReceiveEnvelope(Envelope{
-		ChannelID: chID,
-		Src:       peer,
-		Message:   um,
-	})
 }
 
 func (tr *TestReactor) getMsgs(chID byte) []PeerMessage {
@@ -116,8 +100,7 @@ func MakeSwitchPair(t testing.TB, initSwitch func(int, *Switch) *Switch) (*Switc
 func initSwitchFunc(i int, sw *Switch) *Switch {
 	sw.SetAddrBook(&AddrBookMock{
 		Addrs:    make(map[string]struct{}),
-		OurAddrs: make(map[string]struct{}),
-	})
+		OurAddrs: make(map[string]struct{})})
 
 	// Make two reactors of two channels each
 	sw.AddReactor("foo", NewTestReactor([]*conn.ChannelDescriptor{
@@ -174,9 +157,9 @@ func TestSwitches(t *testing.T) {
 			},
 		},
 	}
-	s1.BroadcastEnvelope(Envelope{ChannelID: byte(0x00), Message: ch0Msg})
-	s1.BroadcastEnvelope(Envelope{ChannelID: byte(0x01), Message: ch1Msg})
-	s1.BroadcastEnvelope(Envelope{ChannelID: byte(0x02), Message: ch2Msg})
+	s1.Broadcast(Envelope{ChannelID: byte(0x00), Message: ch0Msg})
+	s1.Broadcast(Envelope{ChannelID: byte(0x01), Message: ch1Msg})
+	s1.Broadcast(Envelope{ChannelID: byte(0x02), Message: ch2Msg})
 	assertMsgReceivedWithTimeout(t,
 		ch0Msg,
 		byte(0x00),
@@ -467,10 +450,10 @@ func TestSwitchStopPeerForError(t *testing.T) {
 
 	// send messages to the peer from sw1
 	p := sw1.Peers().List()[0]
-	SendEnvelopeShim(p, Envelope{
+	p.Send(Envelope{
 		ChannelID: 0x1,
 		Message:   &p2pproto.Message{},
-	}, sw1.Logger)
+	})
 
 	// stop sw2. this should cause the p to fail,
 	// which results in calling StopPeerForError internally
@@ -722,11 +705,9 @@ func (et errorTransport) NetAddress() NetAddress {
 func (et errorTransport) Accept(c peerConfig) (Peer, error) {
 	return nil, et.acceptErr
 }
-
 func (errorTransport) Dial(NetAddress, peerConfig) (Peer, error) {
 	panic("not implemented")
 }
-
 func (errorTransport) Cleanup(Peer) {
 	panic("not implemented")
 }
@@ -867,7 +848,7 @@ func BenchmarkSwitchBroadcast(b *testing.B) {
 	// Send random message from foo channel to another
 	for i := 0; i < b.N; i++ {
 		chID := byte(i % 4)
-		successChan := s1.BroadcastEnvelope(Envelope{ChannelID: chID})
+		successChan := s1.Broadcast(Envelope{ChannelID: chID})
 		for s := range successChan {
 			if s {
 				numSuccess++
@@ -881,6 +862,7 @@ func BenchmarkSwitchBroadcast(b *testing.B) {
 }
 
 func TestSwitchRemovalErr(t *testing.T) {
+
 	sw1, sw2 := MakeSwitchPair(t, func(i int, sw *Switch) *Switch {
 		return initSwitchFunc(i, sw)
 	})

@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	types "github.com/tendermint/tendermint/rpc/jsonrpc/types"
 )
 
@@ -128,7 +128,7 @@ type Client struct {
 
 	client *http.Client
 
-	mtx       cmtsync.Mutex
+	mtx       tmsync.Mutex
 	nextReqID int
 }
 
@@ -138,8 +138,6 @@ var _ HTTPClient = (*Client)(nil)
 // RPC endpoint.
 var _ Caller = (*Client)(nil)
 var _ Caller = (*RequestBatch)(nil)
-
-var _ fmt.Stringer = (*Client)(nil)
 
 // New returns a Client pointed at the given address.
 // An error is returned on invalid remote. The function panics when remote is nil.
@@ -216,26 +214,15 @@ func (c *Client) Call(
 	if err != nil {
 		return nil, fmt.Errorf("post failed: %w", err)
 	}
+
 	defer httpResponse.Body.Close()
 
 	responseBytes, err := io.ReadAll(httpResponse.Body)
 	if err != nil {
-		return nil, fmt.Errorf("%s. Failed to read response body: %w", getHTTPRespErrPrefix(httpResponse), err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	res, err := unmarshalResponseBytes(responseBytes, id, result)
-	if err != nil {
-		return nil, fmt.Errorf("%s. %w", getHTTPRespErrPrefix(httpResponse), err)
-	}
-	return res, nil
-}
-
-func getHTTPRespErrPrefix(resp *http.Response) string {
-	return fmt.Sprintf("error in json rpc client, with http response metadata: (Status: %s, Protocol %s)", resp.Status, resp.Proto)
-}
-
-func (c *Client) String() string {
-	return fmt.Sprintf("&Client{user=%v, addr=%v, client=%v, nextReqID=%v}", c.username, c.address, c.client, c.nextReqID)
+	return unmarshalResponseBytes(responseBytes, id, result)
 }
 
 // NewRequestBatch starts a batch of requests for this client.
@@ -315,7 +302,7 @@ type jsonRPCBufferedRequest struct {
 type RequestBatch struct {
 	client *Client
 
-	mtx      cmtsync.Mutex
+	mtx      tmsync.Mutex
 	requests []*jsonRPCBufferedRequest
 }
 

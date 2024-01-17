@@ -1,13 +1,13 @@
-// Modified for CometBFT
+// Modified for Tendermint
 // Originally Copyright (c) 2013-2014 Conformal Systems LLC.
 // https://github.com/conformal/btcd/blob/master/LICENSE
 
 package pex
 
 import (
-	crand "crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"hash"
 	"math"
 	"math/rand"
 	"net"
@@ -18,10 +18,10 @@ import (
 
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtmath "github.com/tendermint/tendermint/libs/math"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
+	tmmath "github.com/tendermint/tendermint/libs/math"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
 	"github.com/tendermint/tendermint/libs/service"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	"github.com/tendermint/tendermint/p2p"
 )
 
@@ -89,8 +89,8 @@ type addrBook struct {
 	service.BaseService
 
 	// accessed concurrently
-	mtx        cmtsync.Mutex
-	rand       *cmtrand.Rand
+	mtx        tmsync.Mutex
+	rand       *tmrand.Rand
 	ourAddrs   map[string]struct{}
 	privateIDs map[p2p.ID]struct{}
 	addrLookup map[p2p.ID]*knownAddress // new & old
@@ -104,29 +104,31 @@ type addrBook struct {
 	filePath          string
 	key               string // random prefix for bucket placement
 	routabilityStrict bool
-	hashKey           []byte
+	hasher            hash.Hash64
 
 	wg sync.WaitGroup
 }
 
-func newHashKey() []byte {
-	result := make([]byte, highwayhash.Size)
-	crand.Read(result) //nolint:errcheck // ignore error
-	return result
+func mustNewHasher() hash.Hash64 {
+	key := crypto.CRandBytes(highwayhash.Size)
+	hasher, err := highwayhash.New64(key)
+	if err != nil {
+		panic(err)
+	}
+	return hasher
 }
 
 // NewAddrBook creates a new address book.
 // Use Start to begin processing asynchronous address updates.
 func NewAddrBook(filePath string, routabilityStrict bool) AddrBook {
 	am := &addrBook{
-		rand:              cmtrand.NewRand(),
+		rand:              tmrand.NewRand(),
 		ourAddrs:          make(map[string]struct{}),
 		privateIDs:        make(map[p2p.ID]struct{}),
 		addrLookup:        make(map[p2p.ID]*knownAddress),
 		badPeers:          make(map[p2p.ID]*knownAddress),
 		filePath:          filePath,
 		routabilityStrict: routabilityStrict,
-		hashKey:           newHashKey(),
 	}
 	am.init()
 	am.BaseService = *service.NewBaseService(nil, "AddrBook", am)
@@ -147,6 +149,7 @@ func (a *addrBook) init() {
 	for i := range a.bucketsOld {
 		a.bucketsOld[i] = make(map[string]*knownAddress)
 	}
+	a.hasher = mustNewHasher()
 }
 
 // OnStart implements Service.
@@ -400,10 +403,10 @@ func (a *addrBook) GetSelection() []*p2p.NetAddress {
 		return nil
 	}
 
-	numAddresses := cmtmath.MaxInt(
-		cmtmath.MinInt(minGetSelection, bookSize),
+	numAddresses := tmmath.MaxInt(
+		tmmath.MinInt(minGetSelection, bookSize),
 		bookSize*getSelectionPercent/100)
-	numAddresses = cmtmath.MinInt(maxGetSelection, numAddresses)
+	numAddresses = tmmath.MinInt(maxGetSelection, numAddresses)
 
 	// XXX: instead of making a list of all addresses, shuffling, and slicing a random chunk,
 	// could we just select a random numAddresses of indexes?
@@ -418,7 +421,7 @@ func (a *addrBook) GetSelection() []*p2p.NetAddress {
 	// `numAddresses' since we are throwing the rest.
 	for i := 0; i < numAddresses; i++ {
 		// pick a number between current index and the end
-		j := cmtrand.Intn(len(allAddr)-i) + i
+		j := tmrand.Intn(len(allAddr)-i) + i
 		allAddr[i], allAddr[j] = allAddr[j], allAddr[i]
 	}
 
@@ -457,14 +460,14 @@ func (a *addrBook) GetSelectionWithBias(biasTowardsNewAddrs int) []*p2p.NetAddre
 		biasTowardsNewAddrs = 0
 	}
 
-	numAddresses := cmtmath.MaxInt(
-		cmtmath.MinInt(minGetSelection, bookSize),
+	numAddresses := tmmath.MaxInt(
+		tmmath.MinInt(minGetSelection, bookSize),
 		bookSize*getSelectionPercent/100)
-	numAddresses = cmtmath.MinInt(maxGetSelection, numAddresses)
+	numAddresses = tmmath.MinInt(maxGetSelection, numAddresses)
 
 	// number of new addresses that, if possible, should be in the beginning of the selection
 	// if there are no enough old addrs, will choose new addr instead.
-	numRequiredNewAdd := cmtmath.MaxInt(percentageOfNum(biasTowardsNewAddrs, numAddresses), numAddresses-a.nOld)
+	numRequiredNewAdd := tmmath.MaxInt(percentageOfNum(biasTowardsNewAddrs, numAddresses), numAddresses-a.nOld)
 	selection := a.randomPickAddresses(bucketTypeNew, numRequiredNewAdd)
 	selection = append(selection, a.randomPickAddresses(bucketTypeOld, numAddresses-len(selection))...)
 	return selection
@@ -938,10 +941,7 @@ func groupKeyFor(na *p2p.NetAddress, routabilityStrict bool) string {
 }
 
 func (a *addrBook) hash(b []byte) ([]byte, error) {
-	hasher, err := highwayhash.New64(a.hashKey)
-	if err != nil {
-		return nil, err
-	}
-	hasher.Write(b)
-	return hasher.Sum(nil), nil
+	a.hasher.Reset()
+	a.hasher.Write(b)
+	return a.hasher.Sum(nil), nil
 }

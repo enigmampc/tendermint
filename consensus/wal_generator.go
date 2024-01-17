@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
-	db "github.com/cometbft/cometbft-db"
+	db "github.com/tendermint/tm-db"
 
 	"github.com/tendermint/tendermint/abci/example/kvstore"
 	cfg "github.com/tendermint/tendermint/config"
+	"github.com/tendermint/tendermint/internal/test"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
 	"github.com/tendermint/tendermint/privval"
 	"github.com/tendermint/tendermint/proxy"
 	sm "github.com/tendermint/tendermint/state"
@@ -61,7 +62,7 @@ func WALGenerateNBlocks(t *testing.T, wr io.Writer, numBlocks int) (err error) {
 
 	blockStore := store.NewBlockStore(blockStoreDB)
 
-	proxyApp := proxy.NewAppConns(proxy.NewLocalClientCreator(app))
+	proxyApp := proxy.NewAppConns(proxy.NewLocalClientCreator(app), proxy.NopMetrics())
 	proxyApp.SetLogger(logger.With("module", "proxy"))
 	if err := proxyApp.Start(); err != nil {
 		return fmt.Errorf("failed to start proxy app connections: %w", err)
@@ -84,7 +85,7 @@ func WALGenerateNBlocks(t *testing.T, wr io.Writer, numBlocks int) (err error) {
 	})
 	mempool := emptyMempool{}
 	evpool := sm.EmptyEvidencePool{}
-	blockExec := sm.NewBlockExecutor(stateStore, log.TestingLogger(), proxyApp.Consensus(), mempool, evpool)
+	blockExec := sm.NewBlockExecutor(stateStore, log.TestingLogger(), proxyApp.Consensus(), mempool, evpool, blockStore)
 	consensusState := NewState(config.Consensus, state.Copy(), blockExec, blockStore, mempool, evpool)
 	consensusState.SetLogger(logger)
 	consensusState.SetEventBus(eventBus)
@@ -117,7 +118,7 @@ func WALGenerateNBlocks(t *testing.T, wr io.Writer, numBlocks int) (err error) {
 		if err := consensusState.Stop(); err != nil {
 			t.Error(err)
 		}
-		return fmt.Errorf("waited too long for CometBFT to produce %d blocks (grep logs for `wal_generator`)", numBlocks)
+		return fmt.Errorf("waited too long for tendermint to produce %d blocks (grep logs for `wal_generator`)", numBlocks)
 	}
 }
 
@@ -137,7 +138,7 @@ func WALWithNBlocks(t *testing.T, numBlocks int) (data []byte, err error) {
 func randPort() int {
 	// returns between base and base + spread
 	base, spread := 20000, 20000
-	return base + cmtrand.Intn(spread)
+	return base + tmrand.Intn(spread)
 }
 
 func makeAddrs() (string, string, string) {
@@ -149,11 +150,11 @@ func makeAddrs() (string, string, string) {
 
 // getConfig returns a config for test cases
 func getConfig(t *testing.T) *cfg.Config {
-	c := cfg.ResetTestRoot(t.Name())
+	c := test.ResetTestRoot(t.Name())
 
 	// and we use random ports to run in parallel
-	cmt, rpc, grpc := makeAddrs()
-	c.P2P.ListenAddress = cmt
+	tm, rpc, grpc := makeAddrs()
+	c.P2P.ListenAddress = tm
 	c.RPC.ListenAddress = rpc
 	c.RPC.GRPCListenAddress = grpc
 	return c

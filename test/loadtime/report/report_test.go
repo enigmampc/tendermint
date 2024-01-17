@@ -102,7 +102,7 @@ func TestGenerateReport(t *testing.T) {
 	}
 	r := rl[0]
 	if len(r.All) != 4 {
-		t.Fatalf("report contained different number of data points from expected. Expected %d but contained %d", 4, len(r.All)) //nolint:lll
+		t.Fatalf("report contained different number of data points from expected. Expected %d but contained %d", 4, len(r.All))
 	}
 	if r.NegativeCount != 2 {
 		t.Fatalf("NegativeCount did not match expected. Expected %d but contained %d", 2, r.NegativeCount)

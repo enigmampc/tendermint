@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	dbm "github.com/cometbft/cometbft-db"
+	dbm "github.com/tendermint/tm-db"
 
 	"github.com/tendermint/tendermint/abci/example/kvstore"
 	"github.com/tendermint/tendermint/libs/log"
@@ -21,7 +21,7 @@ import (
 
 // Automatically getting new headers and verifying them.
 func ExampleClient_Update() {
-	// give CometBFT time to generate some blocks
+	// give Tendermint time to generate some blocks
 	time.Sleep(5 * time.Second)
 
 	dbDir, err := os.MkdirTemp("", "light-client-example")
@@ -30,10 +30,7 @@ func ExampleClient_Update() {
 	}
 	defer os.RemoveAll(dbDir)
 
-	var (
-		config  = rpctest.GetConfig()
-		chainID = config.ChainID()
-	)
+	var config = rpctest.GetConfig()
 
 	primary, err := httpp.New(chainID, config.RPC.ListenAddress)
 	if err != nil {
@@ -89,7 +86,7 @@ func ExampleClient_Update() {
 
 // Manually getting light blocks and verifying them.
 func ExampleClient_VerifyLightBlockAtHeight() {
-	// give CometBFT time to generate some blocks
+	// give Tendermint time to generate some blocks
 	time.Sleep(5 * time.Second)
 
 	dbDir, err := os.MkdirTemp("", "light-client-example")
@@ -98,10 +95,7 @@ func ExampleClient_VerifyLightBlockAtHeight() {
 	}
 	defer os.RemoveAll(dbDir)
 
-	var (
-		config  = rpctest.GetConfig()
-		chainID = config.ChainID()
-	)
+	var config = rpctest.GetConfig()
 
 	primary, err := httpp.New(chainID, config.RPC.ListenAddress)
 	if err != nil {
@@ -155,7 +149,7 @@ func ExampleClient_VerifyLightBlockAtHeight() {
 }
 
 func TestMain(m *testing.M) {
-	// start a CometBFT node (and kvstore) in the background to test against
+	// start a tendermint node (and kvstore) in the background to test against
 	app := kvstore.NewApplication()
 	node := rpctest.StartTendermint(app, rpctest.SuppressStdout)
 

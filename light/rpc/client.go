@@ -8,12 +8,12 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/crypto/merkle"
-	cmtbytes "github.com/tendermint/tendermint/libs/bytes"
-	cmtmath "github.com/tendermint/tendermint/libs/math"
+	tmbytes "github.com/tendermint/tendermint/libs/bytes"
+	tmmath "github.com/tendermint/tendermint/libs/math"
 	service "github.com/tendermint/tendermint/libs/service"
 	rpcclient "github.com/tendermint/tendermint/rpc/client"
 	ctypes "github.com/tendermint/tendermint/rpc/core/types"
@@ -125,12 +125,12 @@ func (c *Client) ABCIInfo(ctx context.Context) (*ctypes.ResultABCIInfo, error) {
 }
 
 // ABCIQuery requests proof by default.
-func (c *Client) ABCIQuery(ctx context.Context, path string, data cmtbytes.HexBytes) (*ctypes.ResultABCIQuery, error) {
+func (c *Client) ABCIQuery(ctx context.Context, path string, data tmbytes.HexBytes) (*ctypes.ResultABCIQuery, error) {
 	return c.ABCIQueryWithOptions(ctx, path, data, rpcclient.DefaultABCIQueryOptions)
 }
 
 // ABCIQueryWithOptions returns an error if opts.Prove is false.
-func (c *Client) ABCIQueryWithOptions(ctx context.Context, path string, data cmtbytes.HexBytes,
+func (c *Client) ABCIQueryWithOptions(ctx context.Context, path string, data tmbytes.HexBytes,
 	opts rpcclient.ABCIQueryOptions) (*ctypes.ResultABCIQuery, error) {
 
 	// always request the proof
@@ -234,7 +234,7 @@ func (c *Client) ConsensusParams(ctx context.Context, height *int64) (*ctypes.Re
 	}
 
 	// Validate res.
-	if err := types.ValidateConsensusParams(res.ConsensusParams); err != nil {
+	if err := res.ConsensusParams.ValidateBasic(); err != nil {
 		return nil, err
 	}
 	if res.BlockHeight <= 0 {
@@ -248,7 +248,7 @@ func (c *Client) ConsensusParams(ctx context.Context, height *int64) (*ctypes.Re
 	}
 
 	// Verify hash.
-	if cH, tH := types.HashConsensusParams(res.ConsensusParams), l.ConsensusHash; !bytes.Equal(cH, tH) {
+	if cH, tH := res.ConsensusParams.Hash(), l.ConsensusHash; !bytes.Equal(cH, tH) {
 		return nil, fmt.Errorf("params hash %X does not match trusted hash %X",
 			cH, tH)
 	}
@@ -441,6 +441,40 @@ func (c *Client) BlockResults(ctx context.Context, height *int64) (*ctypes.Resul
 	return res, nil
 }
 
+// Header fetches and verifies the header directly via the light client
+func (c *Client) Header(ctx context.Context, height *int64) (*ctypes.ResultHeader, error) {
+	lb, err := c.updateLightClientIfNeededTo(ctx, height)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ctypes.ResultHeader{Header: lb.Header}, nil
+}
+
+// HeaderByHash calls rpcclient#HeaderByHash and updates the client if it's falling behind.
+func (c *Client) HeaderByHash(ctx context.Context, hash tmbytes.HexBytes) (*ctypes.ResultHeader, error) {
+	res, err := c.next.HeaderByHash(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := res.Header.ValidateBasic(); err != nil {
+		return nil, err
+	}
+
+	lb, err := c.updateLightClientIfNeededTo(ctx, &res.Header.Height)
+	if err != nil {
+		return nil, err
+	}
+
+	if !bytes.Equal(lb.Header.Hash(), res.Header.Hash()) {
+		return nil, fmt.Errorf("primary header hash does not match trusted header hash. (%X != %X)",
+			lb.Header.Hash(), res.Header.Hash())
+	}
+
+	return res, nil
+}
+
 func (c *Client) Commit(ctx context.Context, height *int64) (*ctypes.ResultCommit, error) {
 	// Update the light client if we're behind and retrieve the light block at the requested height
 	// or at the latest height if no height is provided.
@@ -519,7 +553,7 @@ func (c *Client) Validators(
 	}
 
 	skipCount := validateSkipCount(page, perPage)
-	v := l.ValidatorSet.Validators[skipCount : skipCount+cmtmath.MinInt(perPage, totalCount-skipCount)]
+	v := l.ValidatorSet.Validators[skipCount : skipCount+tmmath.MinInt(perPage, totalCount-skipCount)]
 
 	return &ctypes.ResultValidators{
 		BlockHeight: l.Height,

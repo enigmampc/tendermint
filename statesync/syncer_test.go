@@ -12,12 +12,12 @@ import (
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	"github.com/tendermint/tendermint/p2p"
 	p2pmocks "github.com/tendermint/tendermint/p2p/mocks"
-	cmtstate "github.com/tendermint/tendermint/proto/tendermint/state"
+	tmstate "github.com/tendermint/tendermint/proto/tendermint/state"
 	ssproto "github.com/tendermint/tendermint/proto/tendermint/statesync"
-	cmtversion "github.com/tendermint/tendermint/proto/tendermint/version"
+	tmversion "github.com/tendermint/tendermint/proto/tendermint/version"
 	"github.com/tendermint/tendermint/proxy"
 	proxymocks "github.com/tendermint/tendermint/proxy/mocks"
 	sm "github.com/tendermint/tendermint/state"
@@ -50,8 +50,8 @@ func simplePeer(id string) *p2pmocks.Peer {
 func TestSyncer_SyncAny(t *testing.T) {
 	state := sm.State{
 		ChainID: "chain",
-		Version: cmtstate.Version{
-			Consensus: cmtversion.Consensus{
+		Version: tmstate.Version{
+			Consensus: tmversion.Consensus{
 				Block: version.BlockProtocol,
 				App:   testAppVersion,
 			},
@@ -96,9 +96,9 @@ func TestSyncer_SyncAny(t *testing.T) {
 	require.Error(t, err)
 
 	// Adding a couple of peers should trigger snapshot discovery messages
-	peerA := &p2pmocks.PeerEnvelopeSender{}
+	peerA := &p2pmocks.Peer{}
 	peerA.On("ID").Return(p2p.ID("a"))
-	peerA.On("SendEnvelope", mock.MatchedBy(func(i interface{}) bool {
+	peerA.On("Send", mock.MatchedBy(func(i interface{}) bool {
 		e, ok := i.(p2p.Envelope)
 		if !ok {
 			return false
@@ -109,9 +109,9 @@ func TestSyncer_SyncAny(t *testing.T) {
 	syncer.AddPeer(peerA)
 	peerA.AssertExpectations(t)
 
-	peerB := &p2pmocks.PeerEnvelopeSender{}
+	peerB := &p2pmocks.Peer{}
 	peerB.On("ID").Return(p2p.ID("b"))
-	peerB.On("SendEnvelope", mock.MatchedBy(func(i interface{}) bool {
+	peerB.On("Send", mock.MatchedBy(func(i interface{}) bool {
 		e, ok := i.(p2p.Envelope)
 		if !ok {
 			return false
@@ -159,7 +159,7 @@ func TestSyncer_SyncAny(t *testing.T) {
 	}).Times(2).Return(&abci.ResponseOfferSnapshot{Result: abci.ResponseOfferSnapshot_ACCEPT}, nil)
 
 	chunkRequests := make(map[uint32]int)
-	chunkRequestsMtx := cmtsync.Mutex{}
+	chunkRequestsMtx := tmsync.Mutex{}
 	onChunkRequest := func(args mock.Arguments) {
 		e, ok := args[0].(p2p.Envelope)
 		require.True(t, ok)
@@ -176,11 +176,11 @@ func TestSyncer_SyncAny(t *testing.T) {
 		chunkRequests[msg.Index]++
 		chunkRequestsMtx.Unlock()
 	}
-	peerA.On("SendEnvelope", mock.MatchedBy(func(i interface{}) bool {
+	peerA.On("Send", mock.MatchedBy(func(i interface{}) bool {
 		e, ok := i.(p2p.Envelope)
 		return ok && e.ChannelID == ChunkChannel
 	})).Maybe().Run(onChunkRequest).Return(true)
-	peerB.On("SendEnvelope", mock.MatchedBy(func(i interface{}) bool {
+	peerB.On("Send", mock.MatchedBy(func(i interface{}) bool {
 		e, ok := i.(p2p.Envelope)
 		return ok && e.ChannelID == ChunkChannel
 	})).Maybe().Run(onChunkRequest).Return(true)

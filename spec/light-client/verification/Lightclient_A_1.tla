@@ -1,5 +1,4 @@
 -------------------------- MODULE Lightclient_A_1 ----------------------------
-
 (**
  * A state-machine specification of the lite client, following the English spec:
  *

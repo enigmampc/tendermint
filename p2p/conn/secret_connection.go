@@ -13,9 +13,9 @@ import (
 	"net"
 	"time"
 
-	gogotypes "github.com/gogo/protobuf/types"
-	"github.com/gtank/merlin"
+	gogotypes "github.com/cosmos/gogoproto/types"
 	pool "github.com/libp2p/go-buffer-pool"
+	"github.com/oasisprotocol/curve25519-voi/primitives/merlin"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
@@ -26,7 +26,7 @@ import (
 	cryptoenc "github.com/tendermint/tendermint/crypto/encoding"
 	"github.com/tendermint/tendermint/libs/async"
 	"github.com/tendermint/tendermint/libs/protoio"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 	tmp2p "github.com/tendermint/tendermint/proto/tendermint/p2p"
 )
 
@@ -38,15 +38,15 @@ const (
 	aeadSizeOverhead = 16 // overhead of poly 1305 authentication tag
 	aeadKeySize      = chacha20poly1305.KeySize
 	aeadNonceSize    = chacha20poly1305.NonceSize
+
+	labelEphemeralLowerPublicKey = "EPHEMERAL_LOWER_PUBLIC_KEY"
+	labelEphemeralUpperPublicKey = "EPHEMERAL_UPPER_PUBLIC_KEY"
+	labelDHSecret                = "DH_SECRET"
+	labelSecretConnectionMac     = "SECRET_CONNECTION_MAC"
 )
 
 var (
 	ErrSmallOrderRemotePubKey = errors.New("detected low order point from remote peer")
-
-	labelEphemeralLowerPublicKey = []byte("EPHEMERAL_LOWER_PUBLIC_KEY")
-	labelEphemeralUpperPublicKey = []byte("EPHEMERAL_UPPER_PUBLIC_KEY")
-	labelDHSecret                = []byte("DH_SECRET")
-	labelSecretConnectionMac     = []byte("SECRET_CONNECTION_MAC")
 
 	secretConnKeyAndChallengeGen = []byte("TENDERMINT_SECRET_CONNECTION_KEY_AND_CHALLENGE_GEN")
 )
@@ -76,11 +76,11 @@ type SecretConnection struct {
 	// are independent, so we can use two mtxs.
 	// All .Read are covered by recvMtx,
 	// all .Write are covered by sendMtx.
-	recvMtx    cmtsync.Mutex
+	recvMtx    tmsync.Mutex
 	recvBuffer []byte
 	recvNonce  *[aeadNonceSize]byte
 
-	sendMtx   cmtsync.Mutex
+	sendMtx   tmsync.Mutex
 	sendNonce *[aeadNonceSize]byte
 }
 
@@ -132,9 +132,7 @@ func MakeSecretConnection(conn io.ReadWriteCloser, locPrivKey crypto.PrivKey) (*
 
 	const challengeSize = 32
 	var challenge [challengeSize]byte
-	challengeSlice := transcript.ExtractBytes(labelSecretConnectionMac, challengeSize)
-
-	copy(challenge[:], challengeSlice[0:challengeSize])
+	transcript.ExtractBytes(challenge[:], labelSecretConnectionMac)
 
 	sendAead, err := chacha20poly1305.New(sendSecret[:])
 	if err != nil {

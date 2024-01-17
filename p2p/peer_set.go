@@ -3,7 +3,7 @@ package p2p
 import (
 	"net"
 
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
+	tmsync "github.com/tendermint/tendermint/libs/sync"
 )
 
 // IPeerSet has a (immutable) subset of the methods of PeerSet.
@@ -20,7 +20,7 @@ type IPeerSet interface {
 // PeerSet is a special structure for keeping a table of peers.
 // Iteration over the peers is super fast and thread-safe.
 type PeerSet struct {
-	mtx    cmtsync.Mutex
+	mtx    tmsync.Mutex
 	lookup map[ID]*peerSetItem
 	list   []Peer
 }

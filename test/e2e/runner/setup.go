@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -42,11 +41,13 @@ const (
 func Setup(testnet *e2e.Testnet, infp infra.Provider) error {
 	logger.Info("setup", "msg", log.NewLazySprintf("Generating testnet files in %q", testnet.Dir))
 
-	if err := os.MkdirAll(testnet.Dir, os.ModePerm); err != nil {
+	err := os.MkdirAll(testnet.Dir, os.ModePerm)
+	if err != nil {
 		return err
 	}
 
-	if err := infp.Setup(); err != nil {
+	err = infp.Setup()
+	if err != nil {
 		return err
 	}
 
@@ -84,8 +85,7 @@ func Setup(testnet *e2e.Testnet, infp infra.Provider) error {
 		if err != nil {
 			return err
 		}
-		//nolint:gosec // G306: Expect WriteFile permissions to be 0600 or less
-		err = os.WriteFile(filepath.Join(nodeDir, "config", "app.toml"), appCfg, 0o644)
+		err = os.WriteFile(filepath.Join(nodeDir, "config", "app.toml"), appCfg, 0o644) //nolint:gosec
 		if err != nil {
 			return err
 		}
@@ -110,7 +110,7 @@ func Setup(testnet *e2e.Testnet, infp infra.Provider) error {
 			filepath.Join(nodeDir, PrivvalStateFile),
 		)).Save()
 
-		// Set up a dummy validator. CometBFT requires a file PV even when not used, so we
+		// Set up a dummy validator. Tendermint requires a file PV even when not used, so we
 		// give it a dummy such that it will fail if it actually tries to use it.
 		(privval.NewFilePV(ed25519.GenPrivKey(),
 			filepath.Join(nodeDir, PrivvalDummyKeyFile),
@@ -130,7 +130,7 @@ func MakeGenesis(testnet *e2e.Testnet) (types.GenesisDoc, error) {
 		InitialHeight:   testnet.InitialHeight,
 	}
 	// set the app version to 1
-	genesis.ConsensusParams.Version.AppVersion = 1
+	genesis.ConsensusParams.Version.App = 1
 	for validator, power := range testnet.Validators {
 		genesis.Validators = append(genesis.Validators, types.GenesisValidator{
 			Name:    validator.Name,
@@ -139,7 +139,7 @@ func MakeGenesis(testnet *e2e.Testnet) (types.GenesisDoc, error) {
 			Power:   power,
 		})
 	}
-	// The validator set will be sorted internally by CometBFT ranked by power,
+	// The validator set will be sorted internally by Tendermint ranked by power,
 	// but we sort it here as well so that all genesis files are identical.
 	sort.Slice(genesis.Validators, func(i, j int) bool {
 		return strings.Compare(genesis.Validators[i].Name, genesis.Validators[j].Name) == -1
@@ -154,7 +154,7 @@ func MakeGenesis(testnet *e2e.Testnet) (types.GenesisDoc, error) {
 	return genesis, genesis.ValidateAndComplete()
 }
 
-// MakeConfig generates a CometBFT config for a node.
+// MakeConfig generates a Tendermint config for a node.
 func MakeConfig(node *e2e.Node) (*config.Config, error) {
 	cfg := config.DefaultConfig()
 	cfg.Moniker = node.Name
@@ -174,14 +174,14 @@ func MakeConfig(node *e2e.Node) (*config.Config, error) {
 	case e2e.ProtocolGRPC:
 		cfg.ProxyApp = AppAddressTCP
 		cfg.ABCI = "grpc"
-	case e2e.ProtocolBuiltin:
+	case e2e.ProtocolBuiltin, e2e.ProtocolBuiltinUnsync:
 		cfg.ProxyApp = ""
 		cfg.ABCI = ""
 	default:
 		return nil, fmt.Errorf("unexpected ABCI protocol setting %q", node.ABCIProtocol)
 	}
 
-	// CometBFT errors if it does not have a privval key set up, regardless of whether
+	// Tendermint errors if it does not have a privval key set up, regardless of whether
 	// it's actually needed (e.g. for remote KMS or non-validators). We set up a dummy
 	// key here by default, and use the real key for actual validators that should use
 	// the file privval.
@@ -214,10 +214,10 @@ func MakeConfig(node *e2e.Node) (*config.Config, error) {
 		cfg.Mempool.Version = node.Mempool
 	}
 
-	if node.FastSync == "" {
-		cfg.FastSyncMode = false
+	if node.BlockSync == "" {
+		cfg.BlockSyncMode = false
 	} else {
-		cfg.FastSync.Version = node.FastSync
+		cfg.BlockSync.Version = node.BlockSync
 	}
 
 	if node.StateSync {
@@ -248,27 +248,25 @@ func MakeConfig(node *e2e.Node) (*config.Config, error) {
 		}
 		cfg.P2P.PersistentPeers += peer.AddressP2P(true)
 	}
-
-	if node.Prometheus {
-		cfg.Instrumentation.Prometheus = true
-	}
-
 	return cfg, nil
 }
 
 // MakeAppConfig generates an ABCI application config for a node.
 func MakeAppConfig(node *e2e.Node) ([]byte, error) {
 	cfg := map[string]interface{}{
-		"chain_id":          node.Testnet.Name,
-		"dir":               "data/app",
-		"listen":            AppAddressUNIX,
-		"mode":              node.Mode,
-		"proxy_port":        node.ProxyPort,
-		"protocol":          "socket",
-		"persist_interval":  node.PersistInterval,
-		"snapshot_interval": node.SnapshotInterval,
-		"retain_blocks":     node.RetainBlocks,
-		"key_type":          node.PrivvalKey.Type(),
+		"chain_id":               node.Testnet.Name,
+		"dir":                    "data/app",
+		"listen":                 AppAddressUNIX,
+		"mode":                   node.Mode,
+		"proxy_port":             node.ProxyPort,
+		"protocol":               "socket",
+		"persist_interval":       node.PersistInterval,
+		"snapshot_interval":      node.SnapshotInterval,
+		"retain_blocks":          node.RetainBlocks,
+		"key_type":               node.PrivvalKey.Type(),
+		"prepare_proposal_delay": node.Testnet.PrepareProposalDelay,
+		"process_proposal_delay": node.Testnet.ProcessProposalDelay,
+		"check_tx_delay":         node.Testnet.CheckTxDelay,
 	}
 	switch node.ABCIProtocol {
 	case e2e.ProtocolUNIX:
@@ -278,9 +276,9 @@ func MakeAppConfig(node *e2e.Node) ([]byte, error) {
 	case e2e.ProtocolGRPC:
 		cfg["listen"] = AppAddressTCP
 		cfg["protocol"] = "grpc"
-	case e2e.ProtocolBuiltin:
+	case e2e.ProtocolBuiltin, e2e.ProtocolBuiltinUnsync:
 		delete(cfg, "listen")
-		cfg["protocol"] = "builtin"
+		cfg["protocol"] = string(node.ABCIProtocol)
 	default:
 		return nil, fmt.Errorf("unexpected ABCI protocol setting %q", node.ABCIProtocol)
 	}
@@ -299,12 +297,6 @@ func MakeAppConfig(node *e2e.Node) ([]byte, error) {
 			return nil, fmt.Errorf("unexpected privval protocol setting %q", node.PrivvalProtocol)
 		}
 	}
-
-	misbehaviors := make(map[string]string)
-	for height, misbehavior := range node.Misbehaviors {
-		misbehaviors[strconv.Itoa(int(height))] = misbehavior
-	}
-	cfg["misbehaviors"] = misbehaviors
 
 	if len(node.Testnet.ValidatorUpdates) > 0 {
 		validatorUpdates := map[string]map[string]int64{}
@@ -338,6 +330,5 @@ func UpdateConfigStateSync(node *e2e.Node, height int64, hash []byte) error {
 	}
 	bz = regexp.MustCompile(`(?m)^trust_height =.*`).ReplaceAll(bz, []byte(fmt.Sprintf(`trust_height = %v`, height)))
 	bz = regexp.MustCompile(`(?m)^trust_hash =.*`).ReplaceAll(bz, []byte(fmt.Sprintf(`trust_hash = "%X"`, hash)))
-	//nolint:gosec // G306: Expect WriteFile permissions to be 0600 or less
-	return os.WriteFile(cfgPath, bz, 0o644)
+	return os.WriteFile(cfgPath, bz, 0o644) //nolint:gosec
 }

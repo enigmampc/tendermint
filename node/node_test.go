@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"syscall"
 	"testing"
@@ -12,14 +13,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	dbm "github.com/cometbft/cometbft-db"
+	dbm "github.com/tendermint/tm-db"
 
 	"github.com/tendermint/tendermint/abci/example/kvstore"
 	cfg "github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/crypto/ed25519"
 	"github.com/tendermint/tendermint/evidence"
+	"github.com/tendermint/tendermint/internal/test"
 	"github.com/tendermint/tendermint/libs/log"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
 	mempl "github.com/tendermint/tendermint/mempool"
 	mempoolv0 "github.com/tendermint/tendermint/mempool/v0"
 	mempoolv1 "github.com/tendermint/tendermint/mempool/v1"
@@ -31,11 +33,11 @@ import (
 	sm "github.com/tendermint/tendermint/state"
 	"github.com/tendermint/tendermint/store"
 	"github.com/tendermint/tendermint/types"
-	cmttime "github.com/tendermint/tendermint/types/time"
+	tmtime "github.com/tendermint/tendermint/types/time"
 )
 
 func TestNodeStartStop(t *testing.T) {
-	config := cfg.ResetTestRoot("node_node_test")
+	config := test.ResetTestRoot("node_node_test")
 	defer os.RemoveAll(config.RootDir)
 
 	// create & start node
@@ -51,8 +53,8 @@ func TestNodeStartStop(t *testing.T) {
 	require.NoError(t, err)
 	select {
 	case <-blocksSub.Out():
-	case <-blocksSub.Cancelled():
-		t.Fatal("blocksSub was cancelled")
+	case <-blocksSub.Canceled():
+		t.Fatal("blocksSub was canceled")
 	case <-time.After(10 * time.Second):
 		t.Fatal("timed out waiting for the node to produce a block")
 	}
@@ -97,9 +99,9 @@ func TestSplitAndTrimEmpty(t *testing.T) {
 }
 
 func TestNodeDelayedStart(t *testing.T) {
-	config := cfg.ResetTestRoot("node_delayed_start_test")
+	config := test.ResetTestRoot("node_delayed_start_test")
 	defer os.RemoveAll(config.RootDir)
-	now := cmttime.Now()
+	now := tmtime.Now()
 
 	// create & start node
 	n, err := DefaultNewNode(config, log.TestingLogger())
@@ -110,12 +112,12 @@ func TestNodeDelayedStart(t *testing.T) {
 	require.NoError(t, err)
 	defer n.Stop() //nolint:errcheck // ignore for tests
 
-	startTime := cmttime.Now()
+	startTime := tmtime.Now()
 	assert.Equal(t, true, startTime.After(n.GenesisDoc().GenesisTime))
 }
 
 func TestNodeSetAppVersion(t *testing.T) {
-	config := cfg.ResetTestRoot("node_app_version_test")
+	config := test.ResetTestRoot("node_app_version_test")
 	defer os.RemoveAll(config.RootDir)
 
 	// create & start node
@@ -123,7 +125,7 @@ func TestNodeSetAppVersion(t *testing.T) {
 	require.NoError(t, err)
 
 	// default config uses the kvstore app
-	var appVersion uint64 = kvstore.ProtocolVersion
+	var appVersion = kvstore.ProtocolVersion
 
 	// check version is set in state
 	state, err := n.stateStore.Load()
@@ -134,10 +136,33 @@ func TestNodeSetAppVersion(t *testing.T) {
 	assert.Equal(t, n.nodeInfo.(p2p.DefaultNodeInfo).ProtocolVersion.App, appVersion)
 }
 
+func TestPprofServer(t *testing.T) {
+	config := test.ResetTestRoot("node_pprof_test")
+	defer os.RemoveAll(config.RootDir)
+	config.RPC.PprofListenAddress = testFreeAddr(t)
+
+	// should not work yet
+	_, err := http.Get("http://" + config.RPC.PprofListenAddress) //nolint: bodyclose
+	assert.Error(t, err)
+
+	n, err := DefaultNewNode(config, log.TestingLogger())
+	assert.NoError(t, err)
+	assert.NoError(t, n.Start())
+	defer func() {
+		require.NoError(t, n.Stop())
+	}()
+	assert.NotNil(t, n.pprofSrv)
+
+	resp, err := http.Get("http://" + config.RPC.PprofListenAddress + "/debug/pprof")
+	assert.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, 200, resp.StatusCode)
+}
+
 func TestNodeSetPrivValTCP(t *testing.T) {
 	addr := "tcp://" + testFreeAddr(t)
 
-	config := cfg.ResetTestRoot("node_priv_val_tcp_test")
+	config := test.ResetTestRoot("node_priv_val_tcp_test")
 	defer os.RemoveAll(config.RootDir)
 	config.BaseConfig.PrivValidatorListenAddr = addr
 
@@ -150,7 +175,7 @@ func TestNodeSetPrivValTCP(t *testing.T) {
 
 	signerServer := privval.NewSignerServer(
 		dialerEndpoint,
-		config.ChainID(),
+		test.DefaultTestChainID,
 		types.NewMockPV(),
 	)
 
@@ -171,7 +196,7 @@ func TestNodeSetPrivValTCP(t *testing.T) {
 func TestPrivValidatorListenAddrNoProtocol(t *testing.T) {
 	addrNoPrefix := testFreeAddr(t)
 
-	config := cfg.ResetTestRoot("node_priv_val_tcp_test")
+	config := test.ResetTestRoot("node_priv_val_tcp_test")
 	defer os.RemoveAll(config.RootDir)
 	config.BaseConfig.PrivValidatorListenAddr = addrNoPrefix
 
@@ -180,10 +205,10 @@ func TestPrivValidatorListenAddrNoProtocol(t *testing.T) {
 }
 
 func TestNodeSetPrivValIPC(t *testing.T) {
-	tmpfile := "/tmp/kms." + cmtrand.Str(6) + ".sock"
+	tmpfile := "/tmp/kms." + tmrand.Str(6) + ".sock"
 	defer os.Remove(tmpfile) // clean up
 
-	config := cfg.ResetTestRoot("node_priv_val_tcp_test")
+	config := test.ResetTestRoot("node_priv_val_tcp_test")
 	defer os.RemoveAll(config.RootDir)
 	config.BaseConfig.PrivValidatorListenAddr = "unix://" + tmpfile
 
@@ -196,7 +221,7 @@ func TestNodeSetPrivValIPC(t *testing.T) {
 
 	pvsc := privval.NewSignerServer(
 		dialerEndpoint,
-		config.ChainID(),
+		test.DefaultTestChainID,
 		types.NewMockPV(),
 	)
 
@@ -223,10 +248,10 @@ func testFreeAddr(t *testing.T) string {
 // create a proposal block using real and full
 // mempool and evidence pool and validate it.
 func TestCreateProposalBlock(t *testing.T) {
-	config := cfg.ResetTestRoot("node_create_proposal")
+	config := test.ResetTestRoot("node_create_proposal")
 	defer os.RemoveAll(config.RootDir)
 	cc := proxy.NewLocalClientCreator(kvstore.NewApplication())
-	proxyApp := proxy.NewAppConns(cc)
+	proxyApp := proxy.NewAppConns(cc, proxy.NopMetrics())
 	err := proxyApp.Start()
 	require.Nil(t, err)
 	defer proxyApp.Stop() //nolint:errcheck // ignore for tests
@@ -279,7 +304,8 @@ func TestCreateProposalBlock(t *testing.T) {
 	// than can fit in a block
 	var currentBytes int64
 	for currentBytes <= maxEvidenceBytes {
-		ev := types.NewMockDuplicateVoteEvidenceWithValidator(height, time.Now(), privVals[0], "test-chain")
+		ev, err := types.NewMockDuplicateVoteEvidenceWithValidator(height, time.Now(), privVals[0], "test-chain")
+		require.NoError(t, err)
 		currentBytes += int64(len(ev.Bytes()))
 		evidencePool.ReportConflictingVotes(ev.VoteA, ev.VoteB)
 	}
@@ -293,7 +319,7 @@ func TestCreateProposalBlock(t *testing.T) {
 	// than can fit in a block
 	txLength := 100
 	for i := 0; i <= maxBytes/txLength; i++ {
-		tx := cmtrand.Bytes(txLength)
+		tx := tmrand.Bytes(txLength)
 		err := mempool.CheckTx(tx, nil, mempl.TxInfo{})
 		assert.NoError(t, err)
 	}
@@ -304,17 +330,21 @@ func TestCreateProposalBlock(t *testing.T) {
 		proxyApp.Consensus(),
 		mempool,
 		evidencePool,
+		blockStore,
 	)
 
 	commit := types.NewCommit(height-1, 0, types.BlockID{}, nil)
-	block, _ := blockExec.CreateProposalBlock(
+	block, err := blockExec.CreateProposalBlock(
 		height,
 		state, commit,
 		proposerAddr,
+		nil,
 	)
+	require.NoError(t, err)
 
 	// check that the part set does not exceed the maximum block size
-	partSet := block.MakePartSet(partSize)
+	partSet, err := block.MakePartSet(partSize)
+	require.NoError(t, err)
 	assert.Less(t, partSet.ByteSize(), int64(maxBytes))
 
 	partSetFromHeader := types.NewPartSetFromHeader(partSet.Header())
@@ -330,10 +360,10 @@ func TestCreateProposalBlock(t *testing.T) {
 }
 
 func TestMaxProposalBlockSize(t *testing.T) {
-	config := cfg.ResetTestRoot("node_create_proposal")
+	config := test.ResetTestRoot("node_create_proposal")
 	defer os.RemoveAll(config.RootDir)
 	cc := proxy.NewLocalClientCreator(kvstore.NewApplication())
-	proxyApp := proxy.NewAppConns(cc)
+	proxyApp := proxy.NewAppConns(cc, proxy.NopMetrics())
 	err := proxyApp.Start()
 	require.Nil(t, err)
 	defer proxyApp.Stop() //nolint:errcheck // ignore for tests
@@ -372,9 +402,11 @@ func TestMaxProposalBlockSize(t *testing.T) {
 		)
 	}
 
+	blockStore := store.NewBlockStore(dbm.NewMemDB())
+
 	// fill the mempool with one txs just below the maximum size
 	txLength := int(types.MaxDataBytesNoEvidence(maxBytes, 1))
-	tx := cmtrand.Bytes(txLength - 4) // to account for the varint
+	tx := tmrand.Bytes(txLength - 4) // to account for the varint
 	err = mempool.CheckTx(tx, nil, mempl.TxInfo{})
 	assert.NoError(t, err)
 
@@ -384,26 +416,30 @@ func TestMaxProposalBlockSize(t *testing.T) {
 		proxyApp.Consensus(),
 		mempool,
 		sm.EmptyEvidencePool{},
+		blockStore,
 	)
 
 	commit := types.NewCommit(height-1, 0, types.BlockID{}, nil)
-	block, _ := blockExec.CreateProposalBlock(
+	block, err := blockExec.CreateProposalBlock(
 		height,
 		state, commit,
 		proposerAddr,
+		nil,
 	)
+	require.NoError(t, err)
 
 	pb, err := block.ToProto()
 	require.NoError(t, err)
 	assert.Less(t, int64(pb.Size()), maxBytes)
 
 	// check that the part set does not exceed the maximum block size
-	partSet := block.MakePartSet(partSize)
+	partSet, err := block.MakePartSet(partSize)
+	require.NoError(t, err)
 	assert.EqualValues(t, partSet.ByteSize(), int64(pb.Size()))
 }
 
 func TestNodeNewNodeCustomReactors(t *testing.T) {
-	config := cfg.ResetTestRoot("node_new_node_custom_reactors_test")
+	config := test.ResetTestRoot("node_new_node_custom_reactors_test")
 	defer os.RemoveAll(config.RootDir)
 
 	cr := p2pmock.NewReactor()
@@ -415,7 +451,7 @@ func TestNodeNewNodeCustomReactors(t *testing.T) {
 			RecvMessageCapacity: 100,
 		},
 	}
-	customBlockchainReactor := p2pmock.NewReactor()
+	customBlocksyncReactor := p2pmock.NewReactor()
 
 	nodeKey, err := p2p.LoadOrGenNodeKey(config.NodeKeyFile())
 	require.NoError(t, err)
@@ -425,10 +461,10 @@ func TestNodeNewNodeCustomReactors(t *testing.T) {
 		nodeKey,
 		proxy.DefaultClientCreator(config.ProxyApp, config.ABCI, config.DBDir()),
 		DefaultGenesisDocProviderFunc(config),
-		DefaultDBProvider,
+		cfg.DefaultDBProvider,
 		DefaultMetricsProvider(config.Instrumentation),
 		log.TestingLogger(),
-		CustomReactors(map[string]p2p.Reactor{"FOO": cr, "BLOCKCHAIN": customBlockchainReactor}),
+		CustomReactors(map[string]p2p.Reactor{"FOO": cr, "BLOCKSYNC": customBlocksyncReactor}),
 	)
 	require.NoError(t, err)
 
@@ -439,8 +475,8 @@ func TestNodeNewNodeCustomReactors(t *testing.T) {
 	assert.True(t, cr.IsRunning())
 	assert.Equal(t, cr, n.Switch().Reactor("FOO"))
 
-	assert.True(t, customBlockchainReactor.IsRunning())
-	assert.Equal(t, customBlockchainReactor, n.Switch().Reactor("BLOCKCHAIN"))
+	assert.True(t, customBlocksyncReactor.IsRunning())
+	assert.Equal(t, customBlocksyncReactor, n.Switch().Reactor("BLOCKSYNC"))
 
 	channels := n.NodeInfo().(p2p.DefaultNodeInfo).Channels
 	assert.Contains(t, channels, mempl.MempoolChannel)

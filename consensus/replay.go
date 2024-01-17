@@ -2,7 +2,6 @@ package consensus
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -55,8 +54,8 @@ func (cs *State) readReplayMessage(msg *TimedWALMessage, newStepSub types.Subscr
 				if m.Height != m2.Height || m.Round != m2.Round || m.Step != m2.Step {
 					return fmt.Errorf("roundState mismatch. Got %v; Expected %v", m2, m)
 				}
-			case <-newStepSub.Cancelled():
-				return fmt.Errorf("failed to read off newStepSub.Out(). newStepSub was cancelled")
+			case <-newStepSub.Canceled():
+				return fmt.Errorf("failed to read off newStepSub.Out(). newStepSub was canceled")
 			case <-ticker:
 				return fmt.Errorf("failed to read off newStepSub.Out()")
 			}
@@ -240,11 +239,6 @@ func (h *Handshaker) NBlocks() int {
 
 // TODO: retry the handshake/replay if it fails ?
 func (h *Handshaker) Handshake(proxyApp proxy.AppConns) error {
-	return h.HandshakeWithContext(context.TODO(), proxyApp)
-}
-
-// HandshakeWithContext is cancellable version of Handshake
-func (h *Handshaker) HandshakeWithContext(ctx context.Context, proxyApp proxy.AppConns) error {
 
 	// Handshake is done via ABCI Info on the query conn.
 	res, err := proxyApp.Query().InfoSync(proxy.RequestInfo)
@@ -260,7 +254,7 @@ func (h *Handshaker) HandshakeWithContext(ctx context.Context, proxyApp proxy.Ap
 
 	h.logger.Info("ABCI Handshake App Info",
 		"height", blockHeight,
-		"hash", appHash,
+		"hash", log.NewLazySprintf("%X", appHash),
 		"software-version", res.Version,
 		"protocol-version", res.AppVersion,
 	)
@@ -271,13 +265,13 @@ func (h *Handshaker) HandshakeWithContext(ctx context.Context, proxyApp proxy.Ap
 	}
 
 	// Replay blocks up to the latest in the blockstore.
-	appHash, err = h.ReplayBlocksWithContext(ctx, h.initialState, appHash, blockHeight, proxyApp)
+	_, err = h.ReplayBlocks(h.initialState, appHash, blockHeight, proxyApp)
 	if err != nil {
 		return fmt.Errorf("error on replay: %v", err)
 	}
 
-	h.logger.Info("Completed ABCI Handshake - CometBFT and App are synced",
-		"appHeight", blockHeight, "appHash", appHash)
+	h.logger.Info("Completed ABCI Handshake - Tendermint and App are synced",
+		"appHeight", blockHeight, "appHash", log.NewLazySprintf("%X", appHash))
 
 	// TODO: (on restart) replay mempool
 
@@ -288,17 +282,6 @@ func (h *Handshaker) HandshakeWithContext(ctx context.Context, proxyApp proxy.Ap
 // matches the current state.
 // Returns the final AppHash or an error.
 func (h *Handshaker) ReplayBlocks(
-	state sm.State,
-	appHash []byte,
-	appBlockHeight int64,
-	proxyApp proxy.AppConns,
-) ([]byte, error) {
-	return h.ReplayBlocksWithContext(context.TODO(), state, appHash, appBlockHeight, proxyApp)
-}
-
-// ReplayBlocksWithContext is cancellable version of ReplayBlocks.
-func (h *Handshaker) ReplayBlocksWithContext(
-	ctx context.Context,
 	state sm.State,
 	appHash []byte,
 	appBlockHeight int64,
@@ -324,12 +307,12 @@ func (h *Handshaker) ReplayBlocksWithContext(
 		}
 		validatorSet := types.NewValidatorSet(validators)
 		nextVals := types.TM2PB.ValidatorUpdates(validatorSet)
-		csParams := types.TM2PB.ConsensusParams(h.genDoc.ConsensusParams)
+		pbparams := h.genDoc.ConsensusParams.ToProto()
 		req := abci.RequestInitChain{
 			Time:            h.genDoc.GenesisTime,
 			ChainId:         h.genDoc.ChainID,
 			InitialHeight:   h.genDoc.InitialHeight,
-			ConsensusParams: csParams,
+			ConsensusParams: &pbparams,
 			Validators:      nextVals,
 			AppStateBytes:   h.genDoc.AppState,
 		}
@@ -361,8 +344,8 @@ func (h *Handshaker) ReplayBlocksWithContext(
 			}
 
 			if res.ConsensusParams != nil {
-				state.ConsensusParams = types.UpdateConsensusParams(state.ConsensusParams, res.ConsensusParams)
-				state.Version.Consensus.App = state.ConsensusParams.Version.AppVersion
+				state.ConsensusParams = state.ConsensusParams.Update(res.ConsensusParams)
+				state.Version.Consensus.App = state.ConsensusParams.Version.App
 			}
 			// We update the last results hash with the empty hash, to conform with RFC-6962.
 			state.LastResultsHash = merkle.HashFromByteSlices(nil)
@@ -391,11 +374,11 @@ func (h *Handshaker) ReplayBlocksWithContext(
 		return appHash, sm.ErrAppBlockHeightTooHigh{CoreHeight: storeBlockHeight, AppHeight: appBlockHeight}
 
 	case storeBlockHeight < stateBlockHeight:
-		// the state should never be ahead of the store (this is under CometBFT's control)
+		// the state should never be ahead of the store (this is under tendermint's control)
 		panic(fmt.Sprintf("StateBlockHeight (%d) > StoreBlockHeight (%d)", stateBlockHeight, storeBlockHeight))
 
 	case storeBlockHeight > stateBlockHeight+1:
-		// store should be at most one ahead of the state (this is under CometBFT's control)
+		// store should be at most one ahead of the state (this is under tendermint's control)
 		panic(fmt.Sprintf("StoreBlockHeight (%d) > StateBlockHeight + 1 (%d)", storeBlockHeight, stateBlockHeight+1))
 	}
 
@@ -403,11 +386,11 @@ func (h *Handshaker) ReplayBlocksWithContext(
 	// Now either store is equal to state, or one ahead.
 	// For each, consider all cases of where the app could be, given app <= store
 	if storeBlockHeight == stateBlockHeight {
-		// CometBFT ran Commit and saved the state.
+		// Tendermint ran Commit and saved the state.
 		// Either the app is asking for replay, or we're all synced up.
 		if appBlockHeight < storeBlockHeight {
 			// the app is behind, so replay blocks, but no need to go through WAL (state is already synced to store)
-			return h.replayBlocks(ctx, state, proxyApp, appBlockHeight, storeBlockHeight, false)
+			return h.replayBlocks(state, proxyApp, appBlockHeight, storeBlockHeight, false)
 
 		} else if appBlockHeight == storeBlockHeight {
 			// We're good!
@@ -422,7 +405,7 @@ func (h *Handshaker) ReplayBlocksWithContext(
 		case appBlockHeight < stateBlockHeight:
 			// the app is further behind than it should be, so replay blocks
 			// but leave the last block to go through the WAL
-			return h.replayBlocks(ctx, state, proxyApp, appBlockHeight, storeBlockHeight, true)
+			return h.replayBlocks(state, proxyApp, appBlockHeight, storeBlockHeight, true)
 
 		case appBlockHeight == stateBlockHeight:
 			// We haven't run Commit (both the state and app are one block behind),
@@ -452,7 +435,6 @@ func (h *Handshaker) ReplayBlocksWithContext(
 }
 
 func (h *Handshaker) replayBlocks(
-	ctx context.Context,
 	state sm.State,
 	proxyApp proxy.AppConns,
 	appBlockHeight,
@@ -479,12 +461,6 @@ func (h *Handshaker) replayBlocks(
 		firstBlock = state.InitialHeight
 	}
 	for i := firstBlock; i <= finalBlock; i++ {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
 		h.logger.Info("Applying block", "height", i)
 		block := h.store.LoadBlock(i)
 		// Extra check to ensure the app was not changed in a way it shouldn't have.
@@ -492,9 +468,7 @@ func (h *Handshaker) replayBlocks(
 			assertAppHashEqualsOneFromBlock(appHash, block)
 		}
 
-		commits := h.store.LoadBlockCommit(i)
-
-		appHash, err = sm.ExecCommitBlock(proxyApp.Consensus(), block, h.logger, h.stateStore, h.genDoc.InitialHeight, commits)
+		appHash, err = sm.ExecCommitBlock(proxyApp.Consensus(), block, h.logger, h.stateStore, h.genDoc.InitialHeight)
 		if err != nil {
 			return nil, err
 		}
@@ -522,22 +496,11 @@ func (h *Handshaker) replayBlock(state sm.State, height int64, proxyApp proxy.Ap
 
 	// Use stubs for both mempool and evidence pool since no transactions nor
 	// evidence are needed here - block already exists.
-	blockExec := sm.NewBlockExecutor(h.stateStore, h.logger, proxyApp, emptyMempool{}, sm.EmptyEvidencePool{})
+	blockExec := sm.NewBlockExecutor(h.stateStore, h.logger, proxyApp, emptyMempool{}, sm.EmptyEvidencePool{}, h.store)
 	blockExec.SetEventBus(h.eventBus)
 
 	var err error
-
-	commit := h.store.LoadBlockCommit(height)
-	if commit == nil {
-		// try using a non-canonical commit
-		commit = h.store.LoadSeenCommit(height)
-
-		if commit == nil {
-			return sm.State{}, fmt.Errorf("error getting commit for height: %d", height)
-		}
-	}
-
-	state, _, err = blockExec.ApplyBlock(state, meta.BlockID, block, commit)
+	state, err = blockExec.ApplyBlock(state, meta.BlockID, block)
 	if err != nil {
 		return sm.State{}, err
 	}
@@ -564,7 +527,7 @@ func assertAppHashEqualsOneFromState(appHash []byte, state sm.State) {
 
 State: %v
 
-Did you reset CometBFT without resetting your application's data?`,
+Did you reset Tendermint without resetting your application's data?`,
 			appHash, state.AppHash, state))
 	}
 }

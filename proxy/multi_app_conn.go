@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	abcicli "github.com/tendermint/tendermint/abci/client"
-	cmtlog "github.com/tendermint/tendermint/libs/log"
-	cmtos "github.com/tendermint/tendermint/libs/os"
+	tmlog "github.com/tendermint/tendermint/libs/log"
+	tmos "github.com/tendermint/tendermint/libs/os"
 	"github.com/tendermint/tendermint/libs/service"
 )
 
@@ -16,7 +16,7 @@ const (
 	connSnapshot  = "snapshot"
 )
 
-// AppConns is the CometBFT's interface to the application that consists of
+// AppConns is the Tendermint's interface to the application that consists of
 // multiple connections.
 type AppConns interface {
 	service.Service
@@ -32,8 +32,8 @@ type AppConns interface {
 }
 
 // NewAppConns calls NewMultiAppConn.
-func NewAppConns(clientCreator ClientCreator) AppConns {
-	return NewMultiAppConn(clientCreator)
+func NewAppConns(clientCreator ClientCreator, metrics *Metrics) AppConns {
+	return NewMultiAppConn(clientCreator, metrics)
 }
 
 // multiAppConn implements AppConns.
@@ -44,6 +44,7 @@ func NewAppConns(clientCreator ClientCreator) AppConns {
 type multiAppConn struct {
 	service.BaseService
 
+	metrics       *Metrics
 	consensusConn AppConnConsensus
 	mempoolConn   AppConnMempool
 	queryConn     AppConnQuery
@@ -58,8 +59,9 @@ type multiAppConn struct {
 }
 
 // NewMultiAppConn makes all necessary abci connections to the application.
-func NewMultiAppConn(clientCreator ClientCreator) AppConns {
+func NewMultiAppConn(clientCreator ClientCreator, metrics *Metrics) AppConns {
 	multiAppConn := &multiAppConn{
+		metrics:       metrics,
 		clientCreator: clientCreator,
 	}
 	multiAppConn.BaseService = *service.NewBaseService(nil, "multiAppConn", multiAppConn)
@@ -88,7 +90,7 @@ func (app *multiAppConn) OnStart() error {
 		return err
 	}
 	app.queryConnClient = c
-	app.queryConn = NewAppConnQuery(c)
+	app.queryConn = NewAppConnQuery(c, app.metrics)
 
 	c, err = app.abciClientFor(connSnapshot)
 	if err != nil {
@@ -96,7 +98,7 @@ func (app *multiAppConn) OnStart() error {
 		return err
 	}
 	app.snapshotConnClient = c
-	app.snapshotConn = NewAppConnSnapshot(c)
+	app.snapshotConn = NewAppConnSnapshot(c, app.metrics)
 
 	c, err = app.abciClientFor(connMempool)
 	if err != nil {
@@ -104,7 +106,7 @@ func (app *multiAppConn) OnStart() error {
 		return err
 	}
 	app.mempoolConnClient = c
-	app.mempoolConn = NewAppConnMempool(c)
+	app.mempoolConn = NewAppConnMempool(c, app.metrics)
 
 	c, err = app.abciClientFor(connConsensus)
 	if err != nil {
@@ -112,9 +114,9 @@ func (app *multiAppConn) OnStart() error {
 		return err
 	}
 	app.consensusConnClient = c
-	app.consensusConn = NewAppConnConsensus(c)
+	app.consensusConn = NewAppConnConsensus(c, app.metrics)
 
-	// Kill CometBFT if the ABCI application crashes.
+	// Kill Tendermint if the ABCI application crashes.
 	go app.killTMOnClientError()
 
 	return nil
@@ -125,11 +127,11 @@ func (app *multiAppConn) OnStop() {
 }
 
 func (app *multiAppConn) killTMOnClientError() {
-	killFn := func(conn string, err error, logger cmtlog.Logger) {
+	killFn := func(conn string, err error, logger tmlog.Logger) {
 		logger.Error(
-			fmt.Sprintf("%s connection terminated. Did the application crash? Please restart CometBFT", conn),
+			fmt.Sprintf("%s connection terminated. Did the application crash? Please restart tendermint", conn),
 			"err", err)
-		killErr := cmtos.Kill()
+		killErr := tmos.Kill()
 		if killErr != nil {
 			logger.Error("Failed to kill this process - please do so manually", "err", killErr)
 		}

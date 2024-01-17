@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	dbm "github.com/cometbft/cometbft-db"
+	dbm "github.com/tendermint/tm-db"
 
 	"github.com/tendermint/tendermint/abci/example/code"
 	abci "github.com/tendermint/tendermint/abci/types"
@@ -255,4 +255,23 @@ func (app *CounterApplication) Commit() abci.ResponseCommit {
 	hash := make([]byte, 8)
 	binary.BigEndian.PutUint64(hash, uint64(app.txCount))
 	return abci.ResponseCommit{Data: hash}
+}
+
+func (app *CounterApplication) PrepareProposal(
+	req abci.RequestPrepareProposal) abci.ResponsePrepareProposal {
+	txs := make([][]byte, 0, len(req.Txs))
+	var totalBytes int64
+	for _, tx := range req.Txs {
+		totalBytes += int64(len(tx))
+		if totalBytes > req.MaxTxBytes {
+			break
+		}
+		txs = append(txs, tx)
+	}
+	return abci.ResponsePrepareProposal{Txs: txs}
+}
+
+func (app *CounterApplication) ProcessProposal(
+	req abci.RequestProcessProposal) abci.ResponseProcessProposal {
+	return abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_ACCEPT}
 }

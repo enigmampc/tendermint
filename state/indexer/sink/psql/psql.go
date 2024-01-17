@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/libs/pubsub/query"
@@ -81,7 +81,7 @@ func queryWithID(tx *sql.Tx, query string, args ...interface{}) (uint32, error) 
 // insertEvents inserts a slice of events and any indexed attributes of those
 // events into the database associated with dbtx.
 //
-// If txID > 0, the event is attributed to the transaction with that
+// If txID > 0, the event is attributed to the Tendermint transaction with that
 // ID; otherwise it is recorded as a block event.
 func insertEvents(dbtx *sql.Tx, blockID, txID uint32, evts []abci.Event) error {
 	// Populate the transaction ID field iff one is defined (> 0).
@@ -111,7 +111,7 @@ INSERT INTO `+tableEvents+` (block_id, tx_id, type) VALUES ($1, $2, $3)
 			if !attr.Index {
 				continue
 			}
-			compositeKey := evt.Type + "." + string(attr.Key)
+			compositeKey := evt.Type + "." + attr.Key
 			if _, err := dbtx.Exec(`
 INSERT INTO `+tableAttributes+` (event_id, key, composite_key, value)
   VALUES ($1, $2, $3, $4);
@@ -133,7 +133,7 @@ func makeIndexedEvent(compositeKey, value string) abci.Event {
 		return abci.Event{Type: compositeKey}
 	}
 	return abci.Event{Type: compositeKey[:i], Attributes: []abci.EventAttribute{
-		{Key: []byte(compositeKey[i+1:]), Value: []byte(value), Index: true},
+		{Key: compositeKey[i+1:], Value: value, Index: true},
 	}}
 }
 

@@ -7,16 +7,17 @@ import (
 
 	cfg "github.com/tendermint/tendermint/config"
 	"github.com/tendermint/tendermint/crypto/tmhash"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	"github.com/tendermint/tendermint/internal/test"
+	tmrand "github.com/tendermint/tendermint/libs/rand"
+	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 	"github.com/tendermint/tendermint/types"
-	cmttime "github.com/tendermint/tendermint/types/time"
+	tmtime "github.com/tendermint/tendermint/types/time"
 )
 
 var config *cfg.Config // NOTE: must be reset for each _test.go file
 
 func TestMain(m *testing.M) {
-	config = cfg.ResetTestRoot("consensus_height_vote_set_test")
+	config = test.ResetTestRoot("consensus_height_vote_set_test")
 	code := m.Run()
 	os.RemoveAll(config.RootDir)
 	os.Exit(code)
@@ -25,7 +26,7 @@ func TestMain(m *testing.M) {
 func TestPeerCatchupRounds(t *testing.T) {
 	valSet, privVals := types.RandValidatorSet(10, 1)
 
-	hvs := NewHeightVoteSet(config.ChainID(), 1, valSet)
+	hvs := NewHeightVoteSet(test.DefaultTestChainID, 1, valSet)
 
 	vote999_0 := makeVoteHR(t, 1, 0, 999, privVals)
 	added, err := hvs.AddVote(vote999_0, "peer1")
@@ -62,21 +63,20 @@ func makeVoteHR(t *testing.T, height int64, valIndex, round int32, privVals []ty
 		panic(err)
 	}
 
-	randBytes := cmtrand.Bytes(tmhash.Size)
+	randBytes := tmrand.Bytes(tmhash.Size)
 
 	vote := &types.Vote{
 		ValidatorAddress: pubKey.Address(),
 		ValidatorIndex:   valIndex,
 		Height:           height,
 		Round:            round,
-		Timestamp:        cmttime.Now(),
-		Type:             cmtproto.PrecommitType,
+		Timestamp:        tmtime.Now(),
+		Type:             tmproto.PrecommitType,
 		BlockID:          types.BlockID{Hash: randBytes, PartSetHeader: types.PartSetHeader{}},
 	}
-	chainID := config.ChainID()
 
 	v := vote.ToProto()
-	err = privVal.SignVote(chainID, v)
+	err = privVal.SignVote(test.DefaultTestChainID, v)
 	if err != nil {
 		panic(fmt.Sprintf("Error signing vote: %v", err))
 	}

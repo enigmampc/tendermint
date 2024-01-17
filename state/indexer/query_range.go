@@ -1,11 +1,9 @@
 package indexer
 
 import (
-	"math/big"
 	"time"
 
-	"github.com/tendermint/tendermint/libs/pubsub/query"
-	"github.com/tendermint/tendermint/types"
+	"github.com/tendermint/tendermint/libs/pubsub/query/syntax"
 )
 
 // QueryRanges defines a mapping between a composite event key and a QueryRange.
@@ -45,9 +43,6 @@ func (qr QueryRange) LowerBoundValue() interface{} {
 	switch t := qr.LowerBound.(type) {
 	case int64:
 		return t + 1
-	case *big.Int:
-		tmp := new(big.Int)
-		return tmp.Add(t, big.NewInt(1))
 
 	case time.Time:
 		return t.Unix() + 1
@@ -71,9 +66,7 @@ func (qr QueryRange) UpperBoundValue() interface{} {
 	switch t := qr.UpperBound.(type) {
 	case int64:
 		return t - 1
-	case *big.Int:
-		tmp := new(big.Int)
-		return tmp.Sub(t, big.NewInt(1))
+
 	case time.Time:
 		return t.Unix() - 1
 
@@ -82,91 +75,34 @@ func (qr QueryRange) UpperBoundValue() interface{} {
 	}
 }
 
-// LookForRangesWithHeight returns a mapping of QueryRanges and the matching indexes in
-// the provided query conditions. If we are matching attributes within events
-// we need to remember the height range from the condition
-func LookForRangesWithHeight(conditions []query.Condition) (ranges QueryRanges, indexes []int, heightRange QueryRange) {
-	ranges = make(QueryRanges)
-	for i, c := range conditions {
-		heightKey := false
-		if IsRangeOperation(c.Op) {
-			r, ok := ranges[c.CompositeKey]
-			if !ok {
-				r = QueryRange{Key: c.CompositeKey}
-				if c.CompositeKey == types.BlockHeightKey || c.CompositeKey == types.TxHeightKey {
-					heightRange = QueryRange{Key: c.CompositeKey}
-					heightKey = true
-				}
-			}
-
-			switch c.Op {
-			case query.OpGreater:
-				if heightKey {
-					heightRange.LowerBound = c.Operand
-				}
-				r.LowerBound = c.Operand
-
-			case query.OpGreaterEqual:
-				r.IncludeLowerBound = true
-				r.LowerBound = c.Operand
-				if heightKey {
-					heightRange.IncludeLowerBound = true
-					heightRange.LowerBound = c.Operand
-				}
-
-			case query.OpLess:
-				r.UpperBound = c.Operand
-				if heightKey {
-					heightRange.UpperBound = c.Operand
-				}
-
-			case query.OpLessEqual:
-				r.IncludeUpperBound = true
-				r.UpperBound = c.Operand
-				if heightKey {
-					heightRange.IncludeUpperBound = true
-					heightRange.UpperBound = c.Operand
-				}
-			}
-
-			ranges[c.CompositeKey] = r
-			indexes = append(indexes, i)
-		}
-	}
-
-	return ranges, indexes, heightRange
-}
-
 // LookForRanges returns a mapping of QueryRanges and the matching indexes in
 // the provided query conditions.
-//
-// Deprecated: This function will be replaced with LookForRangesWithHeight
-func LookForRanges(conditions []query.Condition) (ranges QueryRanges, indexes []int) {
+func LookForRanges(conditions []syntax.Condition) (ranges QueryRanges, indexes []int) {
 	ranges = make(QueryRanges)
 	for i, c := range conditions {
 		if IsRangeOperation(c.Op) {
-			r, ok := ranges[c.CompositeKey]
+			r, ok := ranges[c.Tag]
 			if !ok {
-				r = QueryRange{Key: c.CompositeKey}
+				r = QueryRange{Key: c.Tag}
 			}
 
 			switch c.Op {
-			case query.OpGreater:
-				r.LowerBound = c.Operand
+			case syntax.TGt:
+				r.LowerBound = conditionArg(c)
 
-			case query.OpGreaterEqual:
+			case syntax.TGeq:
 				r.IncludeLowerBound = true
-				r.LowerBound = c.Operand
+				r.LowerBound = conditionArg(c)
 
-			case query.OpLess:
-				r.UpperBound = c.Operand
+			case syntax.TLt:
+				r.UpperBound = conditionArg(c)
 
-			case query.OpLessEqual:
+			case syntax.TLeq:
 				r.IncludeUpperBound = true
-				r.UpperBound = c.Operand
+				r.UpperBound = conditionArg(c)
 			}
 
-			ranges[c.CompositeKey] = r
+			ranges[c.Tag] = r
 			indexes = append(indexes, i)
 		}
 	}
@@ -176,12 +112,26 @@ func LookForRanges(conditions []query.Condition) (ranges QueryRanges, indexes []
 
 // IsRangeOperation returns a boolean signifying if a query Operator is a range
 // operation or not.
-func IsRangeOperation(op query.Operator) bool {
+func IsRangeOperation(op syntax.Token) bool {
 	switch op {
-	case query.OpGreater, query.OpGreaterEqual, query.OpLess, query.OpLessEqual:
+	case syntax.TGt, syntax.TGeq, syntax.TLt, syntax.TLeq:
 		return true
 
 	default:
 		return false
+	}
+}
+
+func conditionArg(c syntax.Condition) interface{} {
+	if c.Arg == nil {
+		return nil
+	}
+	switch c.Arg.Type {
+	case syntax.TNumber:
+		return int64(c.Arg.Number())
+	case syntax.TTime, syntax.TDate:
+		return c.Arg.Time()
+	default:
+		return c.Arg.Value() // string
 	}
 }

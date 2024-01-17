@@ -3,6 +3,7 @@ package e2e
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -51,23 +52,32 @@ type Manifest struct {
 	// Options are ed25519 & secp256k1
 	KeyType string `toml:"key_type"`
 
+	// Evidence indicates the amount of evidence that will be injected into the
+	// testnet via the RPC endpoint of a random node. Default is 0
+	Evidence int `toml:"evidence"`
+
 	// ABCIProtocol specifies the protocol used to communicate with the ABCI
-	// application: "unix", "tcp", "grpc", or "builtin". Defaults to builtin.
-	// builtin will build a complete CometBFT node into the application and
-	// launch it instead of launching a separate CometBFT process.
+	// application: "unix", "tcp", "grpc", "builtin" or "builtin_unsync".
+	//
+	// Defaults to "builtin". "builtin" will build a complete Tendermint node
+	// into the application and launch it instead of launching a separate
+	// Tendermint process.
+	//
+	// "builtin_unsync" is basically the same as "builtin", except that it uses
+	// an "unsynchronized" local client creator, which attempts to replicate the
+	// same concurrency model locally as the socket client.
 	ABCIProtocol string `toml:"abci_protocol"`
 
-	// UpgradeVersion specifies to which version this nodes need to upgrade.
-	// Currently only uncoordinated upgrade is supported
-	UpgradeVersion string `toml:"upgrade_version"`
+	// Add artificial delays to each of the main ABCI calls to mimic computation time
+	// of the application
+	PrepareProposalDelay time.Duration `toml:"prepare_proposal_delay"`
+	ProcessProposalDelay time.Duration `toml:"process_proposal_delay"`
+	CheckTxDelay         time.Duration `toml:"check_tx_delay"`
+	// TODO: add vote extension and finalize block delay (@cmwaters)
 
 	LoadTxSizeBytes   int `toml:"load_tx_size_bytes"`
 	LoadTxBatchSize   int `toml:"load_tx_batch_size"`
 	LoadTxConnections int `toml:"load_tx_connections"`
-
-	// Enable or disable Prometheus metrics on all nodes.
-	// Defaults to false (disabled).
-	Prometheus bool `toml:"prometheus"`
 }
 
 // ManifestNode represents a node in a testnet manifest.
@@ -77,7 +87,7 @@ type ManifestNode struct {
 	// is generated), and seed nodes run in seed mode with the PEX reactor enabled.
 	Mode string `toml:"mode"`
 
-	// Version specifies which version of CometBFT this node is. Specifying different
+	// Version specifies which version of Tendermint this node is. Specifying different
 	// versions for different nodes allows for testing the interaction of different
 	// node's compatibility. Note that in order to use a node at a particular version,
 	// there must be a docker image of the test app tagged with this version present
@@ -107,9 +117,9 @@ type ManifestNode struct {
 	// runner will wait for the network to reach at least this block height.
 	StartAt int64 `toml:"start_at"`
 
-	// FastSync specifies the fast sync mode: "" (disable), "v0", "v1", or "v2".
+	// BlockSync specifies the block sync mode: "" (disable), "v0" or "v2".
 	// Defaults to disabled.
-	FastSync string `toml:"fast_sync"`
+	BlockSync string `toml:"block_sync"`
 
 	// Mempool specifies which version of mempool to use. Either "v0" or "v1"
 	// This defaults to v0.
@@ -143,16 +153,6 @@ type ManifestNode struct {
 	// pause:      temporarily pauses (freezes) the node
 	// restart:    restarts the node, shutting it down with SIGTERM
 	Perturb []string `toml:"perturb"`
-
-	// Misbehaviors sets how a validator behaves during consensus at a
-	// certain height. Multiple misbehaviors at different heights can be used
-	//
-	// An example of misbehaviors
-	//    { 10 = "double-prevote", 20 = "double-prevote"}
-	//
-	// For more information, look at the readme in the maverick folder.
-	// A list of all behaviors can be found in ../maverick/consensus/behavior.go
-	Misbehaviors map[string]string `toml:"misbehaviors"`
 
 	// SendNoLoad determines if the e2e test should send load to this node.
 	// It defaults to false so unless the configured, the node will

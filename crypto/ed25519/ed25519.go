@@ -3,19 +3,33 @@ package ed25519
 import (
 	"bytes"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"io"
 
-	"golang.org/x/crypto/ed25519"
+	"github.com/oasisprotocol/curve25519-voi/primitives/ed25519"
+	"github.com/oasisprotocol/curve25519-voi/primitives/ed25519/extra/cache"
 
 	"github.com/tendermint/tendermint/crypto"
 	"github.com/tendermint/tendermint/crypto/tmhash"
-	cmtjson "github.com/tendermint/tendermint/libs/json"
+	tmjson "github.com/tendermint/tendermint/libs/json"
 )
 
 //-------------------------------------
 
-var _ crypto.PrivKey = PrivKey{}
+var (
+	_ crypto.PrivKey       = PrivKey{}
+	_ crypto.BatchVerifier = &BatchVerifier{}
+
+	// curve25519-voi's Ed25519 implementation supports configurable
+	// verification behavior, and tendermint uses the ZIP-215 verification
+	// semantics.
+	verifyOptions = &ed25519.Options{
+		Verify: ed25519.VerifyOptionsZIP_215,
+	}
+
+	cachingVerifier = cache.NewVerifier(cache.NewLRUCache(cacheSize))
+)
 
 const (
 	PrivKeyName = "tendermint/PrivKeyEd25519"
@@ -32,11 +46,19 @@ const (
 	SeedSize = 32
 
 	KeyType = "ed25519"
+
+	// cacheSize is the number of public keys that will be cached in
+	// an expanded format for repeated signature verification.
+	//
+	// TODO/perf: Either this should exclude single verification, or be
+	// tuned to `> validatorSize + maxTxnsPerBlock` to avoid cache
+	// thrashing.
+	cacheSize = 4096
 )
 
 func init() {
-	cmtjson.RegisterType(PubKey{}, PubKeyName)
-	cmtjson.RegisterType(PrivKey{}, PrivKeyName)
+	tmjson.RegisterType(PubKey{}, PubKeyName)
+	tmjson.RegisterType(PrivKey{}, PrivKeyName)
 }
 
 // PrivKey implements crypto.PrivKey.
@@ -98,21 +120,19 @@ func (privKey PrivKey) Type() string {
 
 // GenPrivKey generates a new ed25519 private key.
 // It uses OS randomness in conjunction with the current global random seed
-// in cometbft/libs/rand to generate the private key.
+// in tendermint/libs/common to generate the private key.
 func GenPrivKey() PrivKey {
 	return genPrivKey(crypto.CReader())
 }
 
 // genPrivKey generates a new ed25519 private key using the provided reader.
 func genPrivKey(rand io.Reader) PrivKey {
-	seed := make([]byte, SeedSize)
-
-	_, err := io.ReadFull(rand, seed)
+	_, priv, err := ed25519.GenerateKey(rand)
 	if err != nil {
 		panic(err)
 	}
 
-	return PrivKey(ed25519.NewKeyFromSeed(seed))
+	return PrivKey(priv)
 }
 
 // GenPrivKeyFromSecret hashes the secret with SHA2, and uses
@@ -129,7 +149,7 @@ func GenPrivKeyFromSecret(secret []byte) PrivKey {
 
 var _ crypto.PubKey = PubKey{}
 
-// PubKeyEd25519 implements crypto.PubKey for the Ed25519 signature scheme.
+// PubKey implements crypto.PubKey for the Ed25519 signature scheme.
 type PubKey []byte
 
 // Address is the SHA256-20 of the raw pubkey bytes.
@@ -151,7 +171,7 @@ func (pubKey PubKey) VerifySignature(msg []byte, sig []byte) bool {
 		return false
 	}
 
-	return ed25519.Verify(ed25519.PublicKey(pubKey), msg, sig)
+	return cachingVerifier.VerifyWithOptions(ed25519.PublicKey(pubKey), msg, sig, verifyOptions)
 }
 
 func (pubKey PubKey) String() string {
@@ -168,4 +188,41 @@ func (pubKey PubKey) Equals(other crypto.PubKey) bool {
 	}
 
 	return false
+}
+
+//-------------------------------------
+
+// BatchVerifier implements batch verification for ed25519.
+type BatchVerifier struct {
+	*ed25519.BatchVerifier
+}
+
+func NewBatchVerifier() crypto.BatchVerifier {
+	return &BatchVerifier{ed25519.NewBatchVerifier()}
+}
+
+func (b *BatchVerifier) Add(key crypto.PubKey, msg, signature []byte) error {
+	pkEd, ok := key.(PubKey)
+	if !ok {
+		return fmt.Errorf("pubkey is not Ed25519")
+	}
+
+	pkBytes := pkEd.Bytes()
+
+	if l := len(pkBytes); l != PubKeySize {
+		return fmt.Errorf("pubkey size is incorrect; expected: %d, got %d", PubKeySize, l)
+	}
+
+	// check that the signature is the correct length
+	if len(signature) != SignatureSize {
+		return errors.New("invalid signature")
+	}
+
+	cachingVerifier.AddWithOptions(b.BatchVerifier, ed25519.PublicKey(pkBytes), msg, signature, verifyOptions)
+
+	return nil
+}
+
+func (b *BatchVerifier) Verify() (bool, []bool) {
+	return b.BatchVerifier.Verify(crypto.CReader())
 }
