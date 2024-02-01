@@ -67,6 +67,7 @@ func zipDir(src, dest string) error {
 		_, err = io.Copy(headerWriter, file)
 		return err
 	})
+
 }
 
 // copyFile copies a file from src to dest and returns an error upon failure. The

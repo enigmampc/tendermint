@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"math"
 
-	abci "github.com/tendermint/tendermint/abci/types"
-	"github.com/tendermint/tendermint/types"
+	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/cometbft/cometbft/types"
 )
 
 const (
@@ -23,6 +23,8 @@ const (
 	MaxActiveIDs = math.MaxUint16
 )
 
+//go:generate ../scripts/mockery_generate.sh Mempool
+
 // Mempool defines the mempool interface.
 //
 // Updates to the mempool need to be synchronized with committing a block so
@@ -30,7 +32,7 @@ const (
 type Mempool interface {
 	// CheckTx executes a new transaction against the application to determine
 	// its validity and whether it should be added to the mempool.
-	CheckTx(tx types.Tx, callback func(*abci.Response), txInfo TxInfo) error
+	CheckTx(tx types.Tx, callback func(*abci.ResponseCheckTx), txInfo TxInfo) error
 
 	// RemoveTxByKey removes a transaction, identified by its key,
 	// from the mempool.
@@ -65,7 +67,7 @@ type Mempool interface {
 	Update(
 		blockHeight int64,
 		blockTxs types.Txs,
-		deliverTxResponses []*abci.ResponseDeliverTx,
+		deliverTxResponses []*abci.ExecTxResult,
 		newPreFn PreCheckFunc,
 		newPostFn PostCheckFunc,
 	) error

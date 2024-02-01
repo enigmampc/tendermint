@@ -10,18 +10,22 @@ import (
 	"strconv"
 	"strings"
 
-	dbm "github.com/cometbft/cometbft-db"
 	"github.com/google/orderedcode"
 
-	abci "github.com/tendermint/tendermint/abci/types"
-	"github.com/tendermint/tendermint/libs/pubsub/query"
-	"github.com/tendermint/tendermint/state/indexer"
-	"github.com/tendermint/tendermint/types"
+	dbm "github.com/cometbft/cometbft-db"
+
+	abci "github.com/cometbft/cometbft/abci/types"
+	idxutil "github.com/cometbft/cometbft/internal/indexer"
+	"github.com/cometbft/cometbft/libs/log"
+	"github.com/cometbft/cometbft/libs/pubsub/query"
+	"github.com/cometbft/cometbft/libs/pubsub/query/syntax"
+	"github.com/cometbft/cometbft/state/indexer"
+	"github.com/cometbft/cometbft/types"
 )
 
 var _ indexer.BlockIndexer = (*BlockerIndexer)(nil)
 
-// BlockerIndexer implements a block indexer, indexing BeginBlock and EndBlock
+// BlockerIndexer implements a block indexer, indexing FinalizeBlock
 // events with an underlying KV store. Block events are indexed by their height,
 // such that matching search criteria returns the respective block height(s).
 type BlockerIndexer struct {
@@ -30,12 +34,17 @@ type BlockerIndexer struct {
 	// Add unique event identifier to use when querying
 	// Matching will be done both on height AND eventSeq
 	eventSeq int64
+	log      log.Logger
 }
 
 func New(store dbm.DB) *BlockerIndexer {
 	return &BlockerIndexer{
 		store: store,
 	}
+}
+
+func (idx *BlockerIndexer) SetLogger(l log.Logger) {
+	idx.log = l
 }
 
 // Has returns true if the given height has been indexed. An error is returned
@@ -49,17 +58,16 @@ func (idx *BlockerIndexer) Has(height int64) (bool, error) {
 	return idx.store.Has(key)
 }
 
-// Index indexes BeginBlock and EndBlock events for a given block by its height.
+// Index indexes FinalizeBlock events for a given block by its height.
 // The following is indexed:
 //
 // primary key: encode(block.height | height) => encode(height)
-// BeginBlock events: encode(eventType.eventAttr|eventValue|height|begin_block) => encode(height)
-// EndBlock events: encode(eventType.eventAttr|eventValue|height|end_block) => encode(height)
-func (idx *BlockerIndexer) Index(bh types.EventDataNewBlockHeader) error {
+// FinalizeBlock events: encode(eventType.eventAttr|eventValue|height|finalize_block|eventSeq) => encode(height)
+func (idx *BlockerIndexer) Index(bh types.EventDataNewBlockEvents) error {
 	batch := idx.store.NewBatch()
 	defer batch.Close()
 
-	height := bh.Header.Height
+	height := bh.Height
 
 	// 1. index by height
 	key, err := heightKey(height)
@@ -70,21 +78,16 @@ func (idx *BlockerIndexer) Index(bh types.EventDataNewBlockHeader) error {
 		return err
 	}
 
-	// 2. index BeginBlock events
-	if err := idx.indexEvents(batch, bh.ResultBeginBlock.Events, "begin_block", height); err != nil {
-		return fmt.Errorf("failed to index BeginBlock events: %w", err)
-	}
-
-	// 3. index EndBlock events
-	if err := idx.indexEvents(batch, bh.ResultEndBlock.Events, "end_block", height); err != nil {
-		return fmt.Errorf("failed to index EndBlock events: %w", err)
+	// 2. index block events
+	if err := idx.indexEvents(batch, bh.Events, height); err != nil {
+		return fmt.Errorf("failed to index FinalizeBlock events: %w", err)
 	}
 
 	return batch.WriteSync()
 }
 
-// Search performs a query for block heights that match a given BeginBlock
-// and Endblock event search criteria. The given query can match against zero,
+// Search performs a query for block heights that match a given FinalizeBlock
+// event search criteria. The given query can match against zero,
 // one or more block heights. In the case of height queries, i.e. block.height=H,
 // if the height is indexed, that height alone will be returned. An error and
 // nil slice is returned. Otherwise, a non-nil slice and nil error is returned.
@@ -97,55 +100,30 @@ func (idx *BlockerIndexer) Search(ctx context.Context, q *query.Query) ([]int64,
 	default:
 	}
 
-	conditions, err := q.Conditions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse query conditions: %w", err)
-	}
+	conditions := q.Syntax()
+
 	// conditions to skip because they're handled before "everything else"
 	skipIndexes := make([]int, 0)
 
-	var matchEvents bool
-	var matchEventIdx int
-
-	// If the match.events keyword is at the beginning of the query, we will only
-	// return heights where the conditions are true within the same event
-	// and set the matchEvents to true
-	conditions, matchEvents = dedupMatchEvents(conditions)
-
-	if matchEvents {
-		matchEventIdx = 0
-		skipIndexes = append(skipIndexes, matchEventIdx)
-	}
-
-	// If there is an exact height query, return the result immediately
-	// (if it exists).
 	var ok bool
+
 	var heightInfo HeightInfo
-	if matchEvents {
-		// If we are not matching events and block.height = 3 occurs more than once, the later value will
-		// overwrite the first one. For match.events it will create problems. If we have a height range, we
-		// should ignore height equality.
-		conditions, heightInfo, ok = dedupHeight(conditions)
-	} else {
-		heightInfo.height, ok, heightInfo.heightEqIdx = lookForHeight(conditions)
-	}
+	// If we are not matching events and block.height occurs more than once, the later value will
+	// overwrite the first one.
+	conditions, heightInfo, ok = dedupHeight(conditions)
 
 	// Extract ranges. If both upper and lower bounds exist, it's better to get
 	// them in order as to not iterate over kvs that are not within range.
-	// If we have a query range over height and want to still look for
-	// specific event values we do not want to simply return all
-	// blocks in this height range. We remember the height range info
-	// and pass it on to match() to take into account when processing events.
 	ranges, rangeIndexes, heightRange := indexer.LookForRangesWithHeight(conditions)
 	heightInfo.heightRange = heightRange
 
 	// If we have additional constraints and want to query per event
 	// attributes, we cannot simply return all blocks for a height.
 	// But we remember the height we want to find and forward it to
-	// match(). If we only have the height constraint and match.events keyword
+	// match(). If we only have the height constraint
 	// in the query (the second part of the ||), we don't need to query
 	// per event conditions and return all events within the height range.
-	if ok && (!matchEvents || (matchEvents && heightInfo.onlyHeightEq)) {
+	if ok && heightInfo.onlyHeightEq {
 		ok, err := idx.Has(heightInfo.height)
 		if err != nil {
 			return nil, err
@@ -160,7 +138,7 @@ func (idx *BlockerIndexer) Search(ctx context.Context, q *query.Query) ([]int64,
 
 	var heightsInitialized bool
 	filteredHeights := make(map[string][]byte)
-	if matchEvents && heightInfo.heightEqIdx != -1 {
+	if heightInfo.heightEqIdx != -1 {
 		skipIndexes = append(skipIndexes, heightInfo.heightEqIdx)
 	}
 
@@ -168,11 +146,16 @@ func (idx *BlockerIndexer) Search(ctx context.Context, q *query.Query) ([]int64,
 		skipIndexes = append(skipIndexes, rangeIndexes...)
 
 		for _, qr := range ranges {
-			if qr.Key == types.BlockHeightKey && matchEvents && !heightInfo.onlyHeightRange {
+			// If we have a query range over height and want to still look for
+			// specific event values we do not want to simply return all
+			// blocks in this height range. We remember the height range info
+			// and pass it on to match() to take into account when processing events.
+			if qr.Key == types.BlockHeightKey && !heightInfo.onlyHeightRange {
 				// If the query contains ranges other than the height then we need to treat the height
 				// range when querying the conditions of the other range.
 				// Otherwise we can just return all the blocks within the height range (as there is no
 				// additional constraint on events)
+
 				continue
 
 			}
@@ -182,7 +165,7 @@ func (idx *BlockerIndexer) Search(ctx context.Context, q *query.Query) ([]int64,
 			}
 
 			if !heightsInitialized {
-				filteredHeights, err = idx.matchRange(ctx, qr, prefix, filteredHeights, true, matchEvents, heightInfo)
+				filteredHeights, err = idx.matchRange(ctx, qr, prefix, filteredHeights, true, heightInfo)
 				if err != nil {
 					return nil, err
 				}
@@ -195,7 +178,7 @@ func (idx *BlockerIndexer) Search(ctx context.Context, q *query.Query) ([]int64,
 					break
 				}
 			} else {
-				filteredHeights, err = idx.matchRange(ctx, qr, prefix, filteredHeights, false, matchEvents, heightInfo)
+				filteredHeights, err = idx.matchRange(ctx, qr, prefix, filteredHeights, false, heightInfo)
 				if err != nil {
 					return nil, err
 				}
@@ -209,14 +192,13 @@ func (idx *BlockerIndexer) Search(ctx context.Context, q *query.Query) ([]int64,
 			continue
 		}
 
-		startKey, err := orderedcode.Append(nil, c.CompositeKey, fmt.Sprintf("%v", c.Operand))
-
+		startKey, err := orderedcode.Append(nil, c.Tag, c.Arg.Value())
 		if err != nil {
 			return nil, err
 		}
 
 		if !heightsInitialized {
-			filteredHeights, err = idx.match(ctx, c, startKey, filteredHeights, true, matchEvents, heightInfo)
+			filteredHeights, err = idx.match(ctx, c, startKey, filteredHeights, true, heightInfo)
 			if err != nil {
 				return nil, err
 			}
@@ -229,7 +211,7 @@ func (idx *BlockerIndexer) Search(ctx context.Context, q *query.Query) ([]int64,
 				break
 			}
 		} else {
-			filteredHeights, err = idx.match(ctx, c, startKey, filteredHeights, false, matchEvents, heightInfo)
+			filteredHeights, err = idx.match(ctx, c, startKey, filteredHeights, false, heightInfo)
 			if err != nil {
 				return nil, err
 			}
@@ -246,10 +228,11 @@ func (idx *BlockerIndexer) Search(ctx context.Context, q *query.Query) ([]int64,
 		if err != nil {
 			return nil, err
 		}
-		_, okHeight := resultMap[h]
-		if ok && !okHeight {
-			resultMap[h] = struct{}{}
-			results = append(results, h)
+		if ok {
+			if _, ok := resultMap[h]; !ok {
+				resultMap[h] = struct{}{}
+				results = append(results, h)
+			}
 		}
 
 		select {
@@ -277,10 +260,8 @@ func (idx *BlockerIndexer) matchRange(
 	startKey []byte,
 	filteredHeights map[string][]byte,
 	firstRun bool,
-	matchEvents bool,
 	heightInfo HeightInfo,
 ) (map[string][]byte, error) {
-
 	// A previous match was attempted but resulted in no matches, so we return
 	// no matches (assuming AND operand).
 	if !firstRun && len(filteredHeights) == 0 {
@@ -312,21 +293,48 @@ LOOP:
 			continue
 		}
 
-		if _, ok := qr.AnyBound().(*big.Int); ok {
+		if _, ok := qr.AnyBound().(*big.Float); ok {
 			v := new(big.Int)
 			v, ok := v.SetString(eventValue, 10)
-			if !ok { // If the number was not int it might be a float but this behavior is kept the same as before the patch
-				continue LOOP
-			}
-
-			if matchEvents && qr.Key != types.BlockHeightKey {
-				keyHeight, err := parseHeightFromEventKey(it.Key())
-				if err != nil || !checkHeightConditions(heightInfo, keyHeight) {
+			var vF *big.Float
+			if !ok {
+				// The precision here is 125. For numbers bigger than this, the value
+				// will not be parsed properly
+				vF, _, err = big.ParseFloat(eventValue, 10, 125, big.ToNearestEven)
+				if err != nil {
 					continue LOOP
 				}
 			}
-			if checkBounds(qr, v) {
-				idx.setTmpHeights(tmpHeights, it, matchEvents)
+
+			if qr.Key != types.BlockHeightKey {
+				keyHeight, err := parseHeightFromEventKey(it.Key())
+				if err != nil {
+					idx.log.Error("failure to parse height from key:", err)
+					continue LOOP
+				}
+				withinHeight, err := checkHeightConditions(heightInfo, keyHeight)
+				if err != nil {
+					idx.log.Error("failure checking for height bounds:", err)
+					continue LOOP
+				}
+				if !withinHeight {
+					continue LOOP
+				}
+			}
+
+			var withinBounds bool
+			var err error
+			if !ok {
+				withinBounds, err = idxutil.CheckBounds(qr, vF)
+			} else {
+				withinBounds, err = idxutil.CheckBounds(qr, v)
+			}
+			if err != nil {
+				idx.log.Error("failed to parse bounds:", err)
+			} else {
+				if withinBounds {
+					idx.setTmpHeights(tmpHeights, it)
+				}
 			}
 		}
 
@@ -375,32 +383,13 @@ LOOP:
 	return filteredHeights, nil
 }
 
-func (idx *BlockerIndexer) setTmpHeights(tmpHeights map[string][]byte, it dbm.Iterator, matchEvents bool) {
+func (idx *BlockerIndexer) setTmpHeights(tmpHeights map[string][]byte, it dbm.Iterator) {
 	// If we return attributes that occur within the same events, then store the event sequence in the
 	// result map as well
-	if matchEvents {
-		eventSeq, _ := parseEventSeqFromEventKey(it.Key())
-		retVal := it.Value()
-		tmpHeights[string(retVal)+strconv.FormatInt(eventSeq, 10)] = it.Value()
-	} else {
-		tmpHeights[string(it.Value())] = it.Value()
-	}
-}
+	eventSeq, _ := parseEventSeqFromEventKey(it.Key())
+	retVal := it.Value()
+	tmpHeights[string(retVal)+strconv.FormatInt(eventSeq, 10)] = it.Value()
 
-func checkBounds(ranges indexer.QueryRange, v *big.Int) bool {
-	include := true
-	lowerBound := ranges.LowerBoundValue()
-	upperBound := ranges.UpperBoundValue()
-
-	if lowerBound != nil && v.Cmp(lowerBound.(*big.Int)) == -1 {
-		include = false
-	}
-
-	if upperBound != nil && v.Cmp(upperBound.(*big.Int)) == 1 {
-		include = false
-	}
-
-	return include
 }
 
 // match returns all matching heights that meet a given query condition and start
@@ -411,14 +400,12 @@ func checkBounds(ranges indexer.QueryRange, v *big.Int) bool {
 // matched.
 func (idx *BlockerIndexer) match(
 	ctx context.Context,
-	c query.Condition,
+	c syntax.Condition,
 	startKeyBz []byte,
 	filteredHeights map[string][]byte,
 	firstRun bool,
-	matchEvents bool,
 	heightInfo HeightInfo,
 ) (map[string][]byte, error) {
-
 	// A previous match was attempted but resulted in no matches, so we return
 	// no matches (assuming AND operand).
 	if !firstRun && len(filteredHeights) == 0 {
@@ -428,7 +415,7 @@ func (idx *BlockerIndexer) match(
 	tmpHeights := make(map[string][]byte)
 
 	switch {
-	case c.Op == query.OpEqual:
+	case c.Op == syntax.TEq:
 		it, err := dbm.IteratePrefix(idx.store, startKeyBz)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create prefix iterator: %w", err)
@@ -436,14 +423,22 @@ func (idx *BlockerIndexer) match(
 		defer it.Close()
 
 		for ; it.Valid(); it.Next() {
-			if matchEvents {
-				keyHeight, err := parseHeightFromEventKey(it.Key())
-				if err != nil || !checkHeightConditions(heightInfo, keyHeight) {
-					continue
-				}
 
+			keyHeight, err := parseHeightFromEventKey(it.Key())
+			if err != nil {
+				idx.log.Error("failure to parse height from key:", err)
+				continue
 			}
-			idx.setTmpHeights(tmpHeights, it, matchEvents)
+			withinHeight, err := checkHeightConditions(heightInfo, keyHeight)
+			if err != nil {
+				idx.log.Error("failure checking for height bounds:", err)
+				continue
+			}
+			if !withinHeight {
+				continue
+			}
+
+			idx.setTmpHeights(tmpHeights, it)
 
 			if err := ctx.Err(); err != nil {
 				break
@@ -454,8 +449,8 @@ func (idx *BlockerIndexer) match(
 			return nil, err
 		}
 
-	case c.Op == query.OpExists:
-		prefix, err := orderedcode.Append(nil, c.CompositeKey)
+	case c.Op == syntax.TExists:
+		prefix, err := orderedcode.Append(nil, c.Tag)
 		if err != nil {
 			return nil, err
 		}
@@ -467,12 +462,22 @@ func (idx *BlockerIndexer) match(
 		defer it.Close()
 
 		for ; it.Valid(); it.Next() {
+
 			keyHeight, err := parseHeightFromEventKey(it.Key())
-			if err != nil || !checkHeightConditions(heightInfo, keyHeight) {
+			if err != nil {
+				idx.log.Error("failure to parse height from key:", err)
+				continue
+			}
+			withinHeight, err := checkHeightConditions(heightInfo, keyHeight)
+			if err != nil {
+				idx.log.Error("failure checking for height bounds:", err)
+				continue
+			}
+			if !withinHeight {
 				continue
 			}
 
-			idx.setTmpHeights(tmpHeights, it, matchEvents)
+			idx.setTmpHeights(tmpHeights, it)
 
 			select {
 			case <-ctx.Done():
@@ -486,8 +491,8 @@ func (idx *BlockerIndexer) match(
 			return nil, err
 		}
 
-	case c.Op == query.OpContains:
-		prefix, err := orderedcode.Append(nil, c.CompositeKey)
+	case c.Op == syntax.TContains:
+		prefix, err := orderedcode.Append(nil, c.Tag)
 		if err != nil {
 			return nil, err
 		}
@@ -504,12 +509,21 @@ func (idx *BlockerIndexer) match(
 				continue
 			}
 
-			if strings.Contains(eventValue, c.Operand.(string)) {
+			if strings.Contains(eventValue, c.Arg.Value()) {
 				keyHeight, err := parseHeightFromEventKey(it.Key())
-				if err != nil || !checkHeightConditions(heightInfo, keyHeight) {
+				if err != nil {
+					idx.log.Error("failure to parse height from key:", err)
 					continue
 				}
-				idx.setTmpHeights(tmpHeights, it, matchEvents)
+				withinHeight, err := checkHeightConditions(heightInfo, keyHeight)
+				if err != nil {
+					idx.log.Error("failure checking for height bounds:", err)
+					continue
+				}
+				if !withinHeight {
+					continue
+				}
+				idx.setTmpHeights(tmpHeights, it)
 			}
 
 			select {
@@ -557,7 +571,7 @@ func (idx *BlockerIndexer) match(
 	return filteredHeights, nil
 }
 
-func (idx *BlockerIndexer) indexEvents(batch dbm.Batch, events []abci.Event, typ string, height int64) error {
+func (idx *BlockerIndexer) indexEvents(batch dbm.Batch, events []abci.Event, height int64) error {
 	heightBz := int64ToBytes(height)
 
 	for _, event := range events {
@@ -573,13 +587,13 @@ func (idx *BlockerIndexer) indexEvents(batch dbm.Batch, events []abci.Event, typ
 			}
 
 			// index iff the event specified index:true and it's not a reserved event
-			compositeKey := fmt.Sprintf("%s.%s", event.Type, string(attr.Key))
+			compositeKey := fmt.Sprintf("%s.%s", event.Type, attr.Key)
 			if compositeKey == types.BlockHeightKey {
 				return fmt.Errorf("event type and attribute key \"%s\" is reserved; please use a different key", compositeKey)
 			}
 
 			if attr.GetIndex() {
-				key, err := eventKey(compositeKey, typ, string(attr.Value), height, idx.eventSeq)
+				key, err := eventKey(compositeKey, attr.Value, height, idx.eventSeq)
 				if err != nil {
 					return fmt.Errorf("failed to create block index key: %w", err)
 				}

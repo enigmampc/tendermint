@@ -8,7 +8,7 @@ With Docker Compose, you can spin up local testnets with a single command.
 
 ## Requirements
 
-1. [Install CometBFT](../introduction/install.md)
+1. [Install CometBFT](../guides/install.md)
 2. [Install docker](https://docs.docker.com/engine/installation/)
 3. [Install docker-compose](https://docs.docker.com/compose/install/)
 
@@ -96,7 +96,7 @@ rm -rf ./build/node*
 
 ## Configuring ABCI containers
 
-To use your own ABCI applications with 4-node setup edit the [docker-compose.yaml](https://github.com/cometbft/cometbft/blob/v0.34.x/docker-compose.yml) file and add images to your ABCI application.
+To use your own ABCI applications with 4-node setup edit the [docker-compose.yaml](https://github.com/cometbft/cometbft/blob/v0.38.x/docker-compose.yml) file and add images to your ABCI application.
 
 ```yml
  abci0:
@@ -145,7 +145,7 @@ To use your own ABCI applications with 4-node setup edit the [docker-compose.yam
 
 ```
 
-Override the [command](https://github.com/cometbft/cometbft/blob/v0.34.x/networks/local/localnode/Dockerfile#L11) in each node to connect to it's ABCI.
+Override the [command](https://github.com/cometbft/cometbft/blob/v0.38.x/networks/local/localnode/Dockerfile#L11) in each node to connect to it's ABCI.
 
 ```yml
   node0:

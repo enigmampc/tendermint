@@ -1,5 +1,5 @@
 ---
-order: false
+order: 1
 parent:
   title: Introduction
   order: 1
@@ -126,7 +126,7 @@ consensus engine, and provides a particular application state.
 ## ABCI Overview
 
 The [Application BlockChain Interface
-(ABCI)](https://github.com/cometbft/cometbft/tree/main/abci)
+(ABCI)](https://github.com/cometbft/cometbft/tree/v0.38.x/abci)
 allows for Byzantine Fault Tolerant replication of applications
 written in any programming language.
 
@@ -191,7 +191,7 @@ core to the application. The application replies with corresponding
 response messages.
 
 The messages are specified here: [ABCI Message
-Types](https://github.com/cometbft/cometbft/blob/main/proto/tendermint/abci/types.proto).
+Types](https://github.com/cometbft/cometbft/blob/v0.38.x/proto/tendermint/abci/types.proto).
 
 The **DeliverTx** message is the work horse of the application. Each
 transaction in the blockchain is delivered with this message. The
@@ -220,12 +220,12 @@ lightweight clients, as Merkle-hash proofs can be verified by checking
 against the block hash, and that the block hash is signed by a quorum.
 
 There can be multiple ABCI socket connections to an application.
-CometBFT creates three ABCI connections to the application; one
-for the validation of transactions when broadcasting in the mempool, one
-for the consensus engine to run block proposals, and one more for
-querying the application state.
+CometBFT creates four ABCI connections to the application; one
+for the validation of transactions when broadcasting in the mempool, one for
+the consensus engine to run block proposals, one for creating snapshots of the
+application state, and one more for querying the application state.
 
-It's probably evident that applications designers need to very carefully
+It's probably evident that application designers need to very carefully
 design their message handlers to create a blockchain that does anything
 useful but this architecture provides a place to start. The diagram
 below illustrates the flow of messages via ABCI.

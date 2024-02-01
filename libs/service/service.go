@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/tendermint/tendermint/libs/log"
+	"github.com/cometbft/cometbft/libs/log"
 )
 
 var (
@@ -136,7 +136,7 @@ func (bs *BaseService) Start() error {
 			atomic.StoreUint32(&bs.started, 0)
 			return ErrAlreadyStopped
 		}
-		bs.Logger.Debug("service start",
+		bs.Logger.Info("service start",
 			"msg",
 			log.NewLazySprintf("Starting %v service", bs.name),
 			"impl",
@@ -173,7 +173,7 @@ func (bs *BaseService) Stop() error {
 			atomic.StoreUint32(&bs.stopped, 0)
 			return ErrNotStarted
 		}
-		bs.Logger.Debug("service stop",
+		bs.Logger.Info("service stop",
 			"msg",
 			log.NewLazySprintf("Stopping %v service", bs.name),
 			"impl",

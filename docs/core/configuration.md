@@ -17,7 +17,6 @@ like the file below, however, double check by inspecting the
 `config.toml` created with your version of `cometbft` installed:
 
 ```toml
-
 # This is a TOML config file.
 # For more information, see https://github.com/toml-lang/toml
 
@@ -25,6 +24,10 @@ like the file below, however, double check by inspecting the
 # relative to the home directory (e.g. "data"). The home directory is
 # "$HOME/.cometbft" by default, but could be changed via $CMTHOME env variable
 # or --home cmd flag.
+
+# The version of the CometBFT binary that created or
+# last modified the config file. Do not modify this.
+version = "0.38.0"
 
 #######################################################################
 ###                   Main Base Config Options                      ###
@@ -36,11 +39,6 @@ proxy_app = "tcp://127.0.0.1:26658"
 
 # A custom human readable name for this node
 moniker = "anonymous"
-
-# If this node is many blocks behind the tip of the chain, FastSync
-# allows them to catchup quickly by downloading blocks in parallel
-# and verifying their commits
-fast_sync = true
 
 # Database backend: goleveldb | cleveldb | boltdb | rocksdb | badgerdb
 # * goleveldb (github.com/syndtr/goleveldb - most popular implementation)
@@ -180,7 +178,7 @@ experimental_websocket_write_buffer_size = 200
 #
 # Enabling this experimental parameter will cause the WebSocket connection to
 # be closed instead if it cannot read fast enough, allowing for greater
-# predictability in subscription behaviour.
+# predictability in subscription behavior.
 experimental_close_on_slow_client = false
 
 # How long to wait for a tx to be committed during /broadcast_tx_commit.
@@ -221,11 +219,9 @@ pprof_laddr = ""
 # Address to listen for incoming connections
 laddr = "tcp://0.0.0.0:26656"
 
-# Address to advertise to peers for them to dial
-# If empty, will use the same port as the laddr,
-# and will introspect on the listener or use UPnP
-# to figure out the address. ip and port are required
-# example: 159.89.10.97:26656
+# Address to advertise to peers for them to dial. If empty, will use the same
+# port as the laddr, and will introspect on the listener to figure out the
+# address. IP and port are required. Example: 159.89.10.97:26656
 external_address = ""
 
 # Comma separated list of seed nodes to connect to
@@ -233,9 +229,6 @@ seeds = ""
 
 # Comma separated list of nodes to keep persistent connections to
 persistent_peers = ""
-
-# UPNP port forwarding
-upnp = false
 
 # Path to address book
 addr_book_file = "config/addrbook.json"
@@ -292,10 +285,15 @@ dial_timeout = "3s"
 #######################################################
 [mempool]
 
-# Mempool version to use:
-#   1) "v0" - (default) FIFO mempool.
-#   2) "v1" - prioritized mempool.
-version = "v0"
+# The type of mempool for this node to use.
+#
+#  Possible types:
+#  - "flood" : concurrent linked list mempool with flooding gossip protocol
+#  (default)
+#  - "nop"   : nop-mempool (short for no operation; the ABCI app is responsible
+#  for storing, disseminating and proposing txs). "create_empty_blocks=false" is
+#  not supported.
+type = "flood"
 
 # Recheck (default: true) defines whether CometBFT should recheck the
 # validity for all remaining transaction in the mempool after a block.
@@ -303,7 +301,18 @@ version = "v0"
 # mempool may become invalid. If this does not apply to your application,
 # you can disable rechecking.
 recheck = true
+
+# Broadcast (default: true) defines whether the mempool should relay
+# transactions to other peers. Setting this to false will stop the mempool
+# from relaying transactions to other peers until they are included in a
+# block. In other words, if Broadcast is disabled, only the peer you send
+# the tx to will see it until it is included in a block.
 broadcast = true
+
+# WalPath (default: "") configures the location of the Write Ahead Log
+# (WAL) for the mempool. The WAL is disabled by default. To enable, set
+# wal_dir to where you want the WAL to be written (e.g.
+# "data/mempool.wal").
 wal_dir = ""
 
 # Maximum number of transactions in the mempool
@@ -330,22 +339,6 @@ max_tx_bytes = 1048576
 # Including space needed by encoding (one varint per transaction).
 # XXX: Unused due to https://github.com/tendermint/tendermint/issues/5796
 max_batch_bytes = 0
-
-# ttl-duration, if non-zero, defines the maximum amount of time a transaction
-# can exist for in the mempool.
-#
-# Note, if ttl-num-blocks is also defined, a transaction will be removed if it
-# has existed in the mempool at least ttl-num-blocks number of blocks or if it's
-# insertion time into the mempool is beyond ttl-duration.
-ttl-duration = "0s"
-
-# ttl-num-blocks, if non-zero, defines the maximum number of blocks a transaction
-# can exist for in the mempool.
-#
-# Note, if ttl-duration is also defined, a transaction will be removed if it
-# has existed in the mempool at least ttl-num-blocks number of blocks or if
-# it's insertion time into the mempool is beyond ttl-duration.
-ttl-num-blocks = 0
 
 #######################################################
 ###         State Sync Configuration Options        ###
@@ -384,14 +377,16 @@ chunk_request_timeout = "10s"
 chunk_fetchers = "4"
 
 #######################################################
-###       Fast Sync Configuration Connections       ###
+###       Block Sync Configuration Options          ###
 #######################################################
-[fastsync]
+[blocksync]
 
-# Fast Sync version to use:
-#   1) "v0" (default) - the legacy fast sync implementation
-#   2) "v1" - refactor of v0 version for better testability
-#   2) "v2" - complete redesign of v0, optimized for testability & readability
+# Block Sync version to use:
+#
+# In v0.37, v1 and v2 of the block sync protocols were deprecated.
+# Please use v0 instead.
+#
+#   1) "v0" - the default block sync implementation
 version = "v0"
 
 #######################################################
@@ -489,9 +484,11 @@ max_open_connections = 3
 
 # Instrumentation namespace
 namespace = "cometbft"
+
  ```
 
 ## Empty blocks VS no empty blocks
+
 ### create_empty_blocks = true
 
 If `create_empty_blocks` is set to `true` in your config, blocks will be created ~ every second (with default consensus parameters). You can regulate the delay between blocks by changing the `timeout_commit`. E.g. `timeout_commit = "10s"` should result in ~ 10 second blocks.
@@ -505,6 +502,7 @@ Note after the block H, CometBFT creates something we call a "proof block" (only
 Plus, if you set `create_empty_blocks_interval` to something other than the default (`0`), CometBFT will be creating empty blocks even in the absence of transactions every `create_empty_blocks_interval.` For instance, with `create_empty_blocks = false` and `create_empty_blocks_interval = "30s"`, CometBFT will only create blocks if there are transactions, or after waiting 30 seconds without receiving any transactions.
 
 ## Consensus timeouts explained
+
 There's a variety of information about timeouts in [Running in
 production](./running-in-production.md#configuration-parameters).
 You can also find more detailed explanation in the paper describing
@@ -523,18 +521,20 @@ timeout_precommit = "1s"
 timeout_precommit_delta = "500ms"
 timeout_commit = "1s"
 ```
+
 Note that in a successful round, the only timeout that we absolutely wait no
 matter what is `timeout_commit`.
 Here's a brief summary of the timeouts:
-- `timeout_propose` = how long we wait for a proposal block before prevoting nil
-- `timeout_propose_delta` = how much  `timeout_propose` increases with each round
-- `timeout_prevote` = how long we wait after receiving +2/3 prevotes for
+
+- `timeout_propose` = how long a validator should wait for a proposal block before prevoting nil
+- `timeout_propose_delta` = how much `timeout_propose` increases with each round
+- `timeout_prevote` = how long a validator should wait after receiving +2/3 prevotes for
   anything (ie. not a single block or nil)
 - `timeout_prevote_delta` = how much the `timeout_prevote` increases with each round
-- `timeout_precommit` = how long we wait after receiving +2/3 precommits for
+- `timeout_precommit` = how long a validator should wait after receiving +2/3 precommits for
   anything (ie. not a single block or nil)
 - `timeout_precommit_delta` = how much the `timeout_precommit` increases with each round
-- `timeout_commit` = how long we wait after committing a block, before starting
+- `timeout_commit` = how long a validator should wait after committing a block, before starting
   on the new height (this gives us a chance to receive some more precommits,
   even though we already have +2/3)
 

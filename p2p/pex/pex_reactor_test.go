@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/tendermint/tendermint/config"
-	"github.com/tendermint/tendermint/libs/log"
-	"github.com/tendermint/tendermint/p2p"
-	"github.com/tendermint/tendermint/p2p/mock"
-	tmp2p "github.com/tendermint/tendermint/proto/tendermint/p2p"
+	"github.com/cometbft/cometbft/config"
+	"github.com/cometbft/cometbft/libs/log"
+	"github.com/cometbft/cometbft/p2p"
+	"github.com/cometbft/cometbft/p2p/mock"
+	tmp2p "github.com/cometbft/cometbft/proto/tendermint/p2p"
 )
 
 var cfg *config.P2PConfig
@@ -79,7 +79,7 @@ func TestPEXReactorRunning(t *testing.T) {
 
 	// create switches
 	for i := 0; i < N; i++ {
-		switches[i] = p2p.MakeSwitch(cfg, i, "testing", "123.123.123", func(i int, sw *p2p.Switch) *p2p.Switch {
+		switches[i] = p2p.MakeSwitch(cfg, i, func(i int, sw *p2p.Switch) *p2p.Switch {
 			books[i] = NewAddrBook(filepath.Join(dir, fmt.Sprintf("addrbook%d.json", i)), false)
 			books[i].SetLogger(logger.With("pex", i))
 			sw.SetAddrBook(books[i])
@@ -130,10 +130,10 @@ func TestPEXReactorReceive(t *testing.T) {
 
 	size := book.Size()
 	msg := &tmp2p.PexAddrs{Addrs: []tmp2p.NetAddress{peer.SocketAddr().ToProto()}}
-	r.ReceiveEnvelope(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: msg})
+	r.Receive(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: msg})
 	assert.Equal(t, size+1, book.Size())
 
-	r.ReceiveEnvelope(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: &tmp2p.PexRequest{}})
+	r.Receive(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: &tmp2p.PexRequest{}})
 }
 
 func TestPEXReactorRequestMessageAbuse(t *testing.T) {
@@ -154,17 +154,17 @@ func TestPEXReactorRequestMessageAbuse(t *testing.T) {
 	id := string(peer.ID())
 
 	// first time creates the entry
-	r.ReceiveEnvelope(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: &tmp2p.PexRequest{}})
+	r.Receive(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: &tmp2p.PexRequest{}})
 	assert.True(t, r.lastReceivedRequests.Has(id))
 	assert.True(t, sw.Peers().Has(peer.ID()))
 
 	// next time sets the last time value
-	r.ReceiveEnvelope(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: &tmp2p.PexRequest{}})
+	r.Receive(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: &tmp2p.PexRequest{}})
 	assert.True(t, r.lastReceivedRequests.Has(id))
 	assert.True(t, sw.Peers().Has(peer.ID()))
 
 	// third time is too many too soon - peer is removed
-	r.ReceiveEnvelope(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: &tmp2p.PexRequest{}})
+	r.Receive(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: &tmp2p.PexRequest{}})
 	assert.False(t, r.lastReceivedRequests.Has(id))
 	assert.False(t, sw.Peers().Has(peer.ID()))
 	assert.True(t, book.IsBanned(peerAddr))
@@ -191,12 +191,12 @@ func TestPEXReactorAddrsMessageAbuse(t *testing.T) {
 	msg := &tmp2p.PexAddrs{Addrs: []tmp2p.NetAddress{peer.SocketAddr().ToProto()}}
 
 	// receive some addrs. should clear the request
-	r.ReceiveEnvelope(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: msg})
+	r.Receive(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: msg})
 	assert.False(t, r.requestsSent.Has(id))
 	assert.True(t, sw.Peers().Has(peer.ID()))
 
 	// receiving more unsolicited addrs causes a disconnect and ban
-	r.ReceiveEnvelope(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: msg})
+	r.Receive(p2p.Envelope{ChannelID: PexChannel, Src: peer, Message: msg})
 	assert.False(t, sw.Peers().Has(peer.ID()))
 	assert.True(t, book.IsBanned(peer.SocketAddr()))
 }
@@ -417,7 +417,7 @@ func TestPEXReactorSeedModeFlushStop(t *testing.T) {
 
 	// create switches
 	for i := 0; i < N; i++ {
-		switches[i] = p2p.MakeSwitch(cfg, i, "testing", "123.123.123", func(i int, sw *p2p.Switch) *p2p.Switch {
+		switches[i] = p2p.MakeSwitch(cfg, i, func(i int, sw *p2p.Switch) *p2p.Switch {
 			books[i] = NewAddrBook(filepath.Join(dir, fmt.Sprintf("addrbook%d.json", i)), false)
 			books[i].SetLogger(logger.With("pex", i))
 			sw.SetAddrBook(books[i])
@@ -487,7 +487,7 @@ func TestPEXReactorDoesNotAddPrivatePeersToAddrBook(t *testing.T) {
 
 	size := book.Size()
 	msg := &tmp2p.PexAddrs{Addrs: []tmp2p.NetAddress{peer.SocketAddr().ToProto()}}
-	pexR.ReceiveEnvelope(p2p.Envelope{
+	pexR.Receive(p2p.Envelope{
 		ChannelID: PexChannel,
 		Src:       peer,
 		Message:   msg,
@@ -496,22 +496,6 @@ func TestPEXReactorDoesNotAddPrivatePeersToAddrBook(t *testing.T) {
 
 	pexR.AddPeer(peer)
 	assert.Equal(t, size, book.Size())
-}
-
-func TestLegacyReactorReceiveBasic(t *testing.T) {
-	pexR, _ := createReactor(&ReactorConfig{})
-	peer := p2p.CreateRandomPeer(false)
-
-	pexR.InitPeer(peer)
-	pexR.AddPeer(peer)
-	m := &tmp2p.PexAddrs{}
-	wm := m.Wrap()
-	msg, err := proto.Marshal(wm)
-	assert.NoError(t, err)
-
-	assert.NotPanics(t, func() {
-		pexR.Receive(PexChannel, peer, msg)
-	})
 }
 
 func TestPEXReactorDialPeer(t *testing.T) {
@@ -600,8 +584,6 @@ func testCreatePeerWithConfig(dir string, id int, config *ReactorConfig) *p2p.Sw
 	peer := p2p.MakeSwitch(
 		cfg,
 		id,
-		"127.0.0.1",
-		"123.123.123",
 		func(i int, sw *p2p.Switch) *p2p.Switch {
 			book := NewAddrBook(filepath.Join(dir, fmt.Sprintf("addrbook%d.json", id)), false)
 			book.SetLogger(log.TestingLogger())
@@ -632,8 +614,6 @@ func testCreateSeed(dir string, id int, knownAddrs, srcAddrs []*p2p.NetAddress) 
 	seed := p2p.MakeSwitch(
 		cfg,
 		id,
-		"127.0.0.1",
-		"123.123.123",
 		func(i int, sw *p2p.Switch) *p2p.Switch {
 			book := NewAddrBook(filepath.Join(dir, "addrbookSeed.json"), false)
 			book.SetLogger(log.TestingLogger())
@@ -686,7 +666,7 @@ func teardownReactor(book AddrBook) {
 }
 
 func createSwitchAndAddReactors(reactors ...p2p.Reactor) *p2p.Switch {
-	sw := p2p.MakeSwitch(cfg, 0, "127.0.0.1", "123.123.123", func(i int, sw *p2p.Switch) *p2p.Switch { return sw })
+	sw := p2p.MakeSwitch(cfg, 0, func(i int, sw *p2p.Switch) *p2p.Switch { return sw })
 	sw.SetLogger(log.TestingLogger())
 	for _, r := range reactors {
 		sw.AddReactor(r.String(), r)

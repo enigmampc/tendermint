@@ -6,16 +6,16 @@ import (
 	"io"
 	"testing"
 
-	gogotypes "github.com/gogo/protobuf/types"
-	"github.com/gtank/merlin"
+	gogotypes "github.com/cosmos/gogoproto/types"
+	"github.com/oasisprotocol/curve25519-voi/primitives/merlin"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/chacha20poly1305"
 
-	"github.com/tendermint/tendermint/crypto"
-	"github.com/tendermint/tendermint/crypto/ed25519"
-	cryptoenc "github.com/tendermint/tendermint/crypto/encoding"
-	"github.com/tendermint/tendermint/libs/protoio"
-	tmp2p "github.com/tendermint/tendermint/proto/tendermint/p2p"
+	"github.com/cometbft/cometbft/crypto"
+	"github.com/cometbft/cometbft/crypto/ed25519"
+	cryptoenc "github.com/cometbft/cometbft/crypto/encoding"
+	"github.com/cometbft/cometbft/libs/protoio"
+	tmp2p "github.com/cometbft/cometbft/proto/tendermint/p2p"
 )
 
 type buffer struct {
@@ -208,9 +208,7 @@ func (c *evilConn) signChallenge() []byte {
 
 	const challengeSize = 32
 	var challenge [challengeSize]byte
-	challengeSlice := transcript.ExtractBytes(labelSecretConnectionMac, challengeSize)
-
-	copy(challenge[:], challengeSlice[0:challengeSize])
+	transcript.ExtractBytes(challenge[:], labelSecretConnectionMac)
 
 	sendAead, err := chacha20poly1305.New(sendSecret[:])
 	if err != nil {

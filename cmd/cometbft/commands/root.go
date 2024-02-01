@@ -7,10 +7,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	cfg "github.com/tendermint/tendermint/config"
-	"github.com/tendermint/tendermint/libs/cli"
-	cmtflags "github.com/tendermint/tendermint/libs/cli/flags"
-	"github.com/tendermint/tendermint/libs/log"
+	cfg "github.com/cometbft/cometbft/config"
+	"github.com/cometbft/cometbft/libs/cli"
+	cmtflags "github.com/cometbft/cometbft/libs/cli/flags"
+	"github.com/cometbft/cometbft/libs/log"
 )
 
 var (
@@ -55,6 +55,11 @@ func ParseConfig(cmd *cobra.Command) (*cfg.Config, error) {
 	cfg.EnsureRoot(conf.RootDir)
 	if err := conf.ValidateBasic(); err != nil {
 		return nil, fmt.Errorf("error in config file: %v", err)
+	}
+	if warnings := conf.CheckDeprecated(); len(warnings) > 0 {
+		for _, warning := range warnings {
+			logger.Info("deprecated usage found in configuration file", "usage", warning)
+		}
 	}
 	return conf, nil
 }

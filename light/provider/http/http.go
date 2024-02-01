@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tendermint/tendermint/light/provider"
-	rpcclient "github.com/tendermint/tendermint/rpc/client"
-	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
-	"github.com/tendermint/tendermint/types"
+	"github.com/cometbft/cometbft/light/provider"
+	rpcclient "github.com/cometbft/cometbft/rpc/client"
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
+	"github.com/cometbft/cometbft/types"
 )
 
 var (
@@ -202,7 +202,7 @@ func (p *http) signedHeader(ctx context.Context, height *int64) (*types.SignedHe
 			time.Sleep(backoffTimeout(uint16(attempt)))
 			continue
 
-		// either context was cancelled or connection refused.
+		// either context was canceled or connection refused.
 		default:
 			return nil, err
 		}

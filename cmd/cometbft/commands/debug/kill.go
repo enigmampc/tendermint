@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	cfg "github.com/tendermint/tendermint/config"
-	"github.com/tendermint/tendermint/libs/cli"
-	rpchttp "github.com/tendermint/tendermint/rpc/client/http"
+	cfg "github.com/cometbft/cometbft/config"
+	"github.com/cometbft/cometbft/libs/cli"
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 )
 
 var killCmd = &cobra.Command{
@@ -27,12 +27,12 @@ go-routine state, and the node's WAL and config information. This aggregated dat
 is packaged into a compressed archive.
 
 Example:
-$ cometbft debug 34255 /path/to/tm-debug.zip`,
+$ cometbft debug 34255 /path/to/cmt-debug.zip`,
 	Args: cobra.ExactArgs(2),
 	RunE: killCmdHandler,
 }
 
-func killCmdHandler(cmd *cobra.Command, args []string) error {
+func killCmdHandler(_ *cobra.Command, args []string) error {
 	pid, err := strconv.Atoi(args[0])
 	if err != nil {
 		return err

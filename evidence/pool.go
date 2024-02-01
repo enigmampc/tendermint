@@ -8,15 +8,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	dbm "github.com/cometbft/cometbft-db"
-	"github.com/gogo/protobuf/proto"
-	gogotypes "github.com/gogo/protobuf/types"
+	"github.com/cosmos/gogoproto/proto"
+	gogotypes "github.com/cosmos/gogoproto/types"
 
-	clist "github.com/tendermint/tendermint/libs/clist"
-	"github.com/tendermint/tendermint/libs/log"
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
-	sm "github.com/tendermint/tendermint/state"
-	"github.com/tendermint/tendermint/types"
+	dbm "github.com/cometbft/cometbft-db"
+
+	clist "github.com/cometbft/cometbft/libs/clist"
+	"github.com/cometbft/cometbft/libs/log"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	sm "github.com/cometbft/cometbft/state"
+	"github.com/cometbft/cometbft/types"
 )
 
 const (
@@ -52,7 +53,6 @@ type Pool struct {
 // NewPool creates an evidence pool. If using an existing evidence store,
 // it will add all pending evidence to the concurrent list.
 func NewPool(evidenceDB dbm.DB, stateDB sm.Store, blockStore BlockStore) (*Pool, error) {
-
 	state, err := stateDB.Load()
 	if err != nil {
 		return nil, fmt.Errorf("cannot load state: %w", err)
@@ -434,8 +434,8 @@ func (evpool *Pool) removeExpiredPendingEvidence() (int64, time.Time) {
 }
 
 func (evpool *Pool) removeEvidenceFromList(
-	blockEvidenceMap map[string]struct{}) {
-
+	blockEvidenceMap map[string]struct{},
+) {
 	for e := evpool.evidenceList.Front(); e != nil; e = e.Next() {
 		// Remove from clist
 		ev := e.Value.(types.Evidence)
@@ -463,10 +463,13 @@ func (evpool *Pool) processConsensusBuffer(state sm.State) {
 
 		// Check the height of the conflicting votes and fetch the corresponding time and validator set
 		// to produce the valid evidence
-		var dve *types.DuplicateVoteEvidence
+		var (
+			dve *types.DuplicateVoteEvidence
+			err error
+		)
 		switch {
 		case voteSet.VoteA.Height == state.LastBlockHeight:
-			dve = types.NewDuplicateVoteEvidence(
+			dve, err = types.NewDuplicateVoteEvidence(
 				voteSet.VoteA,
 				voteSet.VoteB,
 				state.LastBlockTime,
@@ -474,7 +477,8 @@ func (evpool *Pool) processConsensusBuffer(state sm.State) {
 			)
 
 		case voteSet.VoteA.Height < state.LastBlockHeight:
-			valSet, err := evpool.stateDB.LoadValidators(voteSet.VoteA.Height)
+			var valSet *types.ValidatorSet
+			valSet, err = evpool.stateDB.LoadValidators(voteSet.VoteA.Height)
 			if err != nil {
 				evpool.logger.Error("failed to load validator set for conflicting votes", "height",
 					voteSet.VoteA.Height, "err", err,
@@ -486,7 +490,7 @@ func (evpool *Pool) processConsensusBuffer(state sm.State) {
 				evpool.logger.Error("failed to load block time for conflicting votes", "height", voteSet.VoteA.Height)
 				continue
 			}
-			dve = types.NewDuplicateVoteEvidence(
+			dve, err = types.NewDuplicateVoteEvidence(
 				voteSet.VoteA,
 				voteSet.VoteB,
 				blockMeta.Header.Time,
@@ -500,6 +504,10 @@ func (evpool *Pool) processConsensusBuffer(state sm.State) {
 			evpool.logger.Error("inbound duplicate votes from consensus are of a greater height than current state",
 				"duplicate vote height", voteSet.VoteA.Height,
 				"state.LastBlockHeight", state.LastBlockHeight)
+			continue
+		}
+		if err != nil {
+			evpool.logger.Error("error in generating evidence from votes", "err", err)
 			continue
 		}
 

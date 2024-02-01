@@ -10,14 +10,14 @@ By default, CometBFT uses the `syndtr/goleveldb` package for its in-process
 key-value database. If you want maximal performance, it may be best to install
 the real C-implementation of LevelDB and compile CometBFT to use that using
 `make build COMETBFT_BUILD_OPTIONS=cleveldb`. See the [install
-instructions](../introduction/install.md) for details.
+instructions](../guides/install.md) for details.
 
 CometBFT keeps multiple distinct databases in the `$CMTHOME/data`:
 
 - `blockstore.db`: Keeps the entire blockchain - stores blocks,
   block commits, and block meta data, each indexed by height. Used to sync new
   peers.
-- `evidence.db`: Stores all verified evidence of misbehaviour.
+- `evidence.db`: Stores all verified evidence of misbehavior.
 - `state.db`: Stores the current blockchain state (ie. height, validators,
   consensus params). Only grows if consensus params or validators change. Also
   used to temporarily store intermediate results during block processing.
@@ -123,7 +123,8 @@ ever be exposed publicly.**
 #### Endpoints Returning Multiple Entries
 
 Endpoints returning multiple entries are limited by default to return 30
-elements (100 max). See the [RPC Documentation](../rpc/) for more information.
+elements (100 max). See the [RPC Documentation](https://docs.cometbft.com/v0.38/rpc/)
+for more information.
 
 ## Debugging CometBFT
 
@@ -240,8 +241,8 @@ Recovering from data corruption can be hard and time-consuming. Here are two app
     ./scripts/wal2json/wal2json "$CMTHOME/data/cs.wal/wal" > /tmp/corrupted_wal
     ```
 
-3)  Search for a "CORRUPTED MESSAGE" line.
-4)  By looking at the previous message and the message after the corrupted one
+3) Search for a "CORRUPTED MESSAGE" line.
+4) By looking at the previous message and the message after the corrupted one
    and looking at the logs, try to rebuild the message. If the consequent
    messages are marked as corrupted too (this may happen if length header
    got corrupted or some writes did not make it to the WAL ~ truncation),
@@ -252,7 +253,7 @@ Recovering from data corruption can be hard and time-consuming. Here are two app
     $EDITOR /tmp/corrupted_wal
     ```
 
-5)  After editing, convert this file back into binary form by running:
+5) After editing, convert this file back into binary form by running:
 
     ```sh
     ./scripts/json2wal/json2wal /tmp/corrupted_wal  $CMTHOME/data/cs.wal/wal
@@ -352,7 +353,7 @@ We want `skip_timeout_commit=false` when there is economics on the line
 because proposers should wait to hear for more votes. But if you don't
 care about that and want the fastest consensus, you can skip it. It will
 be kept false by default for public deployments (e.g. [Cosmos
-Hub](https://cosmos.network/intro/hub)) while for enterprise
+Hub](https://hub.cosmos.network/)) while for enterprise
 applications, setting it to true is not a problem.
 
 - `consensus.peer_gossip_sleep_duration`
@@ -369,7 +370,7 @@ proposing the next block).
 
 By default, CometBFT checks whenever a peer's address is routable before
 saving it to the address book. The address is considered as routable if the IP
-is [valid and within allowed ranges](https://github.com/cometbft/cometbft/blob/v0.34.x/p2p/netaddress.go#L258).
+is [valid and within allowed ranges](https://github.com/cometbft/cometbft/blob/v0.38.x/p2p/netaddress.go#L258).
 
 This may not be the case for private or local networks, where your IP range is usually
 strictly limited and private. If that case, you need to set `addr_book_strict`

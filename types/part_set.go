@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/tendermint/tendermint/crypto/merkle"
-	"github.com/tendermint/tendermint/libs/bits"
-	cmtbytes "github.com/tendermint/tendermint/libs/bytes"
-	cmtjson "github.com/tendermint/tendermint/libs/json"
-	cmtmath "github.com/tendermint/tendermint/libs/math"
-	cmtsync "github.com/tendermint/tendermint/libs/sync"
-	cmtproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	"github.com/cometbft/cometbft/crypto/merkle"
+	"github.com/cometbft/cometbft/libs/bits"
+	cmtbytes "github.com/cometbft/cometbft/libs/bytes"
+	cmtjson "github.com/cometbft/cometbft/libs/json"
+	cmtmath "github.com/cometbft/cometbft/libs/math"
+	cmtsync "github.com/cometbft/cometbft/libs/sync"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 )
 
 var (
@@ -145,6 +145,12 @@ func PartSetHeaderFromProto(ppsh *cmtproto.PartSetHeader) (*PartSetHeader, error
 	return psh, psh.ValidateBasic()
 }
 
+// ProtoPartSetHeaderIsZero is similar to the IsZero function for
+// PartSetHeader, but for the Protobuf representation.
+func ProtoPartSetHeaderIsZero(ppsh *cmtproto.PartSetHeader) bool {
+	return ppsh.Total == 0 && len(ppsh.Hash) == 0
+}
+
 //-------------------------------------
 
 type PartSet struct {
@@ -264,9 +270,12 @@ func (ps *PartSet) Total() uint32 {
 }
 
 func (ps *PartSet) AddPart(part *Part) (bool, error) {
+	// TODO: remove this? would be preferable if this only returned (false, nil)
+	// when its a duplicate block part
 	if ps == nil {
 		return false, nil
 	}
+
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
 

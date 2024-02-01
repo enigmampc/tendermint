@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	cfg "github.com/tendermint/tendermint/config"
-	"github.com/tendermint/tendermint/libs/cli"
-	cmtos "github.com/tendermint/tendermint/libs/os"
+	cfg "github.com/cometbft/cometbft/config"
+	"github.com/cometbft/cometbft/libs/cli"
+	cmtos "github.com/cometbft/cometbft/libs/os"
 )
 
 // clearConfig clears env vars, the given root dir, and resets viper.
@@ -65,7 +65,7 @@ func TestRootHome(t *testing.T) {
 	}{
 		{nil, nil, root},
 		{[]string{"--home", newRoot}, nil, newRoot},
-		{nil, map[string]string{"TMHOME": newRoot}, newRoot}, //XXX: Deprecated.
+		{nil, map[string]string{"TMHOME": newRoot}, newRoot}, // XXX: Deprecated.
 		{nil, map[string]string{"CMTHOME": newRoot}, newRoot},
 	}
 

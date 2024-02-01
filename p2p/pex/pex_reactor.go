@@ -6,15 +6,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
-
-	"github.com/tendermint/tendermint/libs/cmap"
-	cmtmath "github.com/tendermint/tendermint/libs/math"
-	cmtrand "github.com/tendermint/tendermint/libs/rand"
-	"github.com/tendermint/tendermint/libs/service"
-	"github.com/tendermint/tendermint/p2p"
-	"github.com/tendermint/tendermint/p2p/conn"
-	tmp2p "github.com/tendermint/tendermint/proto/tendermint/p2p"
+	"github.com/cometbft/cometbft/libs/cmap"
+	cmtmath "github.com/cometbft/cometbft/libs/math"
+	cmtrand "github.com/cometbft/cometbft/libs/rand"
+	"github.com/cometbft/cometbft/libs/service"
+	"github.com/cometbft/cometbft/p2p"
+	"github.com/cometbft/cometbft/p2p/conn"
+	tmp2p "github.com/cometbft/cometbft/proto/tendermint/p2p"
 )
 
 type Peer = p2p.Peer
@@ -54,8 +52,7 @@ const (
 	defaultBanTime = 24 * time.Hour
 )
 
-type errMaxAttemptsToDial struct {
-}
+type errMaxAttemptsToDial struct{}
 
 func (e errMaxAttemptsToDial) Error() string {
 	return fmt.Sprintf("reached max attempts %d to dial", maxAttemptsToDial)
@@ -218,7 +215,7 @@ func (r *Reactor) AddPeer(p Peer) {
 }
 
 // RemovePeer implements Reactor by resetting peer's requests info.
-func (r *Reactor) RemovePeer(p Peer, reason interface{}) {
+func (r *Reactor) RemovePeer(p Peer, _ interface{}) {
 	id := string(p.ID())
 	r.requestsSent.Delete(id)
 	r.lastReceivedRequests.Delete(id)
@@ -237,7 +234,7 @@ func (r *Reactor) logErrAddrBook(err error) {
 }
 
 // Receive implements Reactor by handling incoming PEX messages.
-func (r *Reactor) ReceiveEnvelope(e p2p.Envelope) {
+func (r *Reactor) Receive(e p2p.Envelope) {
 	r.Logger.Debug("Received message", "src", e.Src, "chId", e.ChannelID, "msg", e.Message)
 
 	switch msg := e.Message.(type) {
@@ -300,23 +297,6 @@ func (r *Reactor) ReceiveEnvelope(e p2p.Envelope) {
 	}
 }
 
-func (r *Reactor) Receive(chID byte, peer p2p.Peer, msgBytes []byte) {
-	msg := &tmp2p.Message{}
-	err := proto.Unmarshal(msgBytes, msg)
-	if err != nil {
-		panic(err)
-	}
-	um, err := msg.Unwrap()
-	if err != nil {
-		panic(err)
-	}
-	r.ReceiveEnvelope(p2p.Envelope{
-		ChannelID: chID,
-		Src:       peer,
-		Message:   um,
-	})
-}
-
 // enforces a minimum amount of time between requests
 func (r *Reactor) receiveRequest(src Peer) error {
 	id := string(src.ID())
@@ -360,10 +340,10 @@ func (r *Reactor) RequestAddrs(p Peer) {
 	}
 	r.Logger.Debug("Request addrs", "from", p)
 	r.requestsSent.Set(id, struct{}{})
-	p2p.SendEnvelopeShim(p, p2p.Envelope{ //nolint: staticcheck
+	p.Send(p2p.Envelope{
 		ChannelID: PexChannel,
 		Message:   &tmp2p.PexRequest{},
-	}, r.Logger)
+	})
 }
 
 // ReceiveAddrs adds the given addrs to the addrbook if theres an open
@@ -425,7 +405,7 @@ func (r *Reactor) SendAddrs(p Peer, netAddrs []*p2p.NetAddress) {
 		ChannelID: PexChannel,
 		Message:   &tmp2p.PexAddrs{Addrs: p2p.NetAddressesToProto(netAddrs)},
 	}
-	p2p.SendEnvelopeShim(p, e, r.Logger) //nolint: staticcheck
+	p.Send(e)
 }
 
 // SetEnsurePeersPeriod sets period to ensure peers connected.
@@ -508,7 +488,7 @@ func (r *Reactor) ensurePeers() {
 		}
 		// TODO: consider moving some checks from toDial into here
 		// so we don't even consider dialing peers that we want to wait
-		// before dialling again, or have dialed too many times already
+		// before dialing again, or have dialed too many times already
 		toDial[try.ID] = try
 	}
 
@@ -539,7 +519,7 @@ func (r *Reactor) ensurePeers() {
 		peersCount := len(peers)
 		if peersCount > 0 {
 			peer := peers[cmtrand.Int()%peersCount]
-			r.Logger.Debug("We need more addresses. Sending pexRequest to random peer", "peer", peer)
+			r.Logger.Info("We need more addresses. Sending pexRequest to random peer", "peer", peer)
 			r.RequestAddrs(peer)
 		}
 

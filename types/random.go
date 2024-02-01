@@ -1,7 +1,7 @@
 package types
 
 import (
-	ctmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	ctmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 )
 
 type EnclaveRandom struct {
