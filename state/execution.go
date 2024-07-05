@@ -3,10 +3,8 @@ package state
 import (
 	"bytes"
 	"context"
-	"fmt"
-	"time"
 	"encoding/hex"
-	tmenclave "github.com/scrtlabs/tm-secret-enclave"
+	"fmt"
 	abci "github.com/cometbft/cometbft/abci/types"
 	cryptoenc "github.com/cometbft/cometbft/crypto/encoding"
 	"github.com/cometbft/cometbft/libs/fail"
@@ -15,6 +13,8 @@ import (
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/proxy"
 	"github.com/cometbft/cometbft/types"
+	tmenclave "github.com/scrtlabs/tm-secret-enclave"
+	"time"
 )
 
 //-----------------------------------------------------------------------------
@@ -240,6 +240,7 @@ func (blockExec *BlockExecutor) ApplyBlock(
 		DecidedLastCommit:  buildLastCommitInfoFromStore(block, blockExec.store, state.InitialHeight),
 		Misbehavior:        block.Evidence.Evidence.ToABCI(),
 		Txs:                block.Txs.ToSliceOfBytes(),
+		EncryptedRandom:    block.EncryptedRandom.ToProto(),
 	})
 	endTime := time.Now().UnixNano()
 	blockExec.metrics.BlockProcessingTime.Observe(float64(endTime-startTime) / 1000000)
