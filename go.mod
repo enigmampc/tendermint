@@ -50,6 +50,7 @@ require (
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/google/uuid v1.4.0
 	github.com/oasisprotocol/curve25519-voi v0.0.0-20220708102147-0a8a51822cae
+	github.com/scrtlabs/tm-secret-enclave v1.11.3
 	github.com/vektra/mockery/v2 v2.23.1
 	golang.org/x/sync v0.5.0
 	gonum.org/v1/gonum v0.12.0

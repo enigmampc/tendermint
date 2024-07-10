@@ -3,9 +3,8 @@ package state
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
-	"time"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 	cryptoenc "github.com/cometbft/cometbft/crypto/encoding"
 	"github.com/cometbft/cometbft/libs/fail"
@@ -14,6 +13,8 @@ import (
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/cometbft/cometbft/proxy"
 	"github.com/cometbft/cometbft/types"
+	tmenclave "github.com/scrtlabs/tm-secret-enclave"
+	"time"
 )
 
 //-----------------------------------------------------------------------------
@@ -209,6 +210,26 @@ func (blockExec *BlockExecutor) ApplyBlock(
 		return state, ErrInvalidBlock(err)
 	}
 
+	// ScrtLabs -> changes begin
+
+	// Submit next set of validators to enclave
+	valSetProto, err := state.Validators.ToProto()
+	if err != nil {
+		return state, fmt.Errorf("error in marshaling validator set: %v", err)
+	}
+	valSetBytes, err := valSetProto.Marshal()
+	if err != nil {
+		return state, fmt.Errorf("error in marshaling validator set: %v", err)
+	}
+	err = tmenclave.SubmitValidatorSet(valSetBytes, uint64(block.Height))
+	if err != nil {
+		return state, fmt.Errorf("error submitting validator set to enclave: %v", err)
+	}
+	// todo: change to log level debug later
+	blockExec.logger.Info(fmt.Sprintf("Submitted validator set to enclave for height %d, val set hash: %s", block.Height, hex.EncodeToString(block.ValidatorsHash)))
+
+	// ScrtLabs <- changes end
+
 	startTime := time.Now().UnixNano()
 	abciResponse, err := blockExec.proxyApp.FinalizeBlock(context.TODO(), &abci.RequestFinalizeBlock{
 		Hash:               block.Hash(),
@@ -219,6 +240,7 @@ func (blockExec *BlockExecutor) ApplyBlock(
 		DecidedLastCommit:  buildLastCommitInfoFromStore(block, blockExec.store, state.InitialHeight),
 		Misbehavior:        block.Evidence.Evidence.ToABCI(),
 		Txs:                block.Txs.ToSliceOfBytes(),
+		EncryptedRandom:    block.EncryptedRandom.ToProto(),
 	})
 	endTime := time.Now().UnixNano()
 	blockExec.metrics.BlockProcessingTime.Observe(float64(endTime-startTime) / 1000000)

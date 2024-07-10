@@ -347,6 +347,11 @@ type Header struct {
 	// consensus info
 	EvidenceHash    cmtbytes.HexBytes `json:"evidence_hash"`    // evidence included in the block
 	ProposerAddress Address           `json:"proposer_address"` // original proposer of the block
+
+	// ScrtLabs -> change in
+	// encrypted Random Source
+	EncryptedRandom *EnclaveRandom `json:"encrypted_random"`
+	// ScrtLabs <- change out
 }
 
 // Populate the Header with state-derived data.
@@ -356,7 +361,7 @@ func (h *Header) Populate(
 	timestamp time.Time, lastBlockID BlockID,
 	valHash, nextValHash []byte,
 	consensusHash, appHash, lastResultsHash []byte,
-	proposerAddress Address,
+	proposerAddress Address, encryptedRandom *EnclaveRandom,
 ) {
 	h.Version = version
 	h.ChainID = chainID
@@ -368,6 +373,9 @@ func (h *Header) Populate(
 	h.AppHash = appHash
 	h.LastResultsHash = lastResultsHash
 	h.ProposerAddress = proposerAddress
+	// ScrtLabs -> change in
+	h.EncryptedRandom = encryptedRandom
+	// ScrtLabs <- change out
 }
 
 // ValidateBasic performs stateless validation on a Header returning an error
@@ -533,6 +541,9 @@ func (h *Header) ToProto() *cmtproto.Header {
 		LastResultsHash:    h.LastResultsHash,
 		LastCommitHash:     h.LastCommitHash,
 		ProposerAddress:    h.ProposerAddress,
+		// ScrtLabs -> change in
+		EncryptedRandom:    h.EncryptedRandom.ToProto(),
+		// ScrtLabs <- change out
 	}
 }
 
@@ -550,6 +561,13 @@ func HeaderFromProto(ph *cmtproto.Header) (Header, error) {
 		return Header{}, err
 	}
 
+	// ScrtLabs -> change in
+	encRandom, err := EnclaveRandomFromProto(ph.EncryptedRandom)
+	if err != nil {
+		return Header{}, err
+	}
+	// ScrtLabs <- change out
+
 	h.Version = ph.Version
 	h.ChainID = ph.ChainID
 	h.Height = ph.Height
@@ -565,7 +583,9 @@ func HeaderFromProto(ph *cmtproto.Header) (Header, error) {
 	h.LastResultsHash = ph.LastResultsHash
 	h.LastCommitHash = ph.LastCommitHash
 	h.ProposerAddress = ph.ProposerAddress
-
+	// ScrtLabs -> change in
+	h.EncryptedRandom = encRandom
+	// ScrtLabs <- change out
 	return *h, h.ValidateBasic()
 }
 
