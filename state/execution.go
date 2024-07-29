@@ -252,6 +252,7 @@ func (blockExec *BlockExecutor) applyBlock(state State, blockID types.BlockID, b
 		Misbehavior:        block.Evidence.Evidence.ToABCI(),
 		Txs:                block.Txs.ToSliceOfBytes(),
 		EncryptedRandom:    block.EncryptedRandom.ToProto(),
+		Commit:             blockExec.blockStore.LoadSeenCommit(block.Height).ToProto(),
 	})
 	endTime := time.Now().UnixNano()
 	blockExec.metrics.BlockProcessingTime.Observe(float64(endTime-startTime) / 1000000)

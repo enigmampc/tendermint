@@ -193,6 +193,7 @@ message RequestFinalizeBlock {
   // proposer_address is the address of the public key of the original proposer of the block.
   bytes proposer_address = 8;
   tendermint.types.EncryptedRandom encrypted_random = 9; // a random number encrypted by the proposer to be used in contracts
+  tendermint.types.Commit commit = 10;
 }
 
 //----------------------------------------
