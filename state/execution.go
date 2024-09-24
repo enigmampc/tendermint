@@ -217,6 +217,10 @@ func (blockExec *BlockExecutor) ApplyBlock(
 		return state, ErrInvalidBlock(err)
 	}
 
+	return blockExec.applyBlock(state, blockID, block)
+}
+
+func (blockExec *BlockExecutor) applyBlock(state State, blockID types.BlockID, block *types.Block) (State, error) {
 	// ScrtLabs -> changes begin
 
 	// Submit next set of validators to enclave
@@ -237,10 +241,6 @@ func (blockExec *BlockExecutor) ApplyBlock(
 
 	// ScrtLabs <- changes end
 
-	return blockExec.applyBlock(state, blockID, block)
-}
-
-func (blockExec *BlockExecutor) applyBlock(state State, blockID types.BlockID, block *types.Block) (State, error) {
 	startTime := time.Now().UnixNano()
 	abciResponse, err := blockExec.proxyApp.FinalizeBlock(context.TODO(), &abci.RequestFinalizeBlock{
 		Hash:               block.Hash(),
